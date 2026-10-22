@@ -44,6 +44,7 @@ class MeChatCreation {
             previous.agent != agent)) {
       throw StateError('Resume the pending chat before starting another.');
     }
+    if (previous != null) return;
     if (sync.prefs == null ||
         !await sync.prefs!.setString(
           storageKey(sync),
@@ -94,11 +95,12 @@ class MeChatCreation {
     sync.check();
     final result = existing ?? await createChannel();
     sync.check();
-    final member = await hasAgent();
+    final status = await Future.wait([hasAgent(), isPlaced()]);
+    final member = status[0];
     sync.check();
     if (!member) await addAgent();
     sync.check();
-    final placed = await isPlaced();
+    final placed = status[1];
     sync.check();
     // Placement may be confirmed while its inner journal cleanup failed.
     if (!placed || sync.prefs?.getString(sync.pendingKey) != null) {
