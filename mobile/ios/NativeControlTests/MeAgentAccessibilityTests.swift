@@ -14,15 +14,39 @@ struct MeAgentAccessibilityTests {
           channelDescription: nil, originalName: nil, originalDescription: nil,
           canEditDetails: true, canEditCanvas: false, canvasContent: "",
           canvasLoaded: false,
-          chatOptions: ["fieldsLocked": locked, "assistants": empty ? [] : [["id": "agent", "name": "Agent"]]],
+          chatOptions: ["presentationId": "test", "assistantsLoading": empty, "fieldsLocked": locked, "assistants": empty ? [] : [["id": "agent", "name": "Agent"]]],
           onCancel: {}, onSet: { _ in }
         )
         controller.loadViewIfNeeded()
-        let cell = controller.tableView(controller.tableView, cellForRowAt: IndexPath(row: 0, section: 1))
+        precondition(controller.numberOfSections(in: controller.tableView) == 3)
+        let projectCell = controller.tableView(controller.tableView, cellForRowAt: IndexPath(row: 0, section: 1))
+        let project = projectCell.accessoryView as! UIButton
+        precondition(project.accessibilityLabel == "Project")
+        precondition(project.accessibilityValue == "No project")
+        precondition(project.titleColor(for: .normal) == .label)
+        precondition(project.isEnabled == !locked)
+        precondition(project.showsMenuAsPrimaryAction && project.menu != nil)
+        let cell = controller.tableView(controller.tableView, cellForRowAt: IndexPath(row: 0, section: 2))
         let disabled = locked || empty
         precondition(cell.accessibilityTraits.contains(.notEnabled) == disabled)
         precondition(cell.accessibilityTraits.contains(.button) == !disabled)
         precondition((cell.selectionStyle == .none) == disabled)
+        if empty && !locked {
+          controller.tableView.frame = CGRect(x: 0, y: 0, width: 390, height: 844)
+          controller.tableView.reloadData()
+          controller.tableView.layoutIfNeeded()
+          precondition(controller.tableView(controller.tableView, titleForFooterInSection: 1) == nil)
+          precondition(controller.tableView(controller.tableView, titleForFooterInSection: 2) == "Loading agents…")
+          controller.updateChatAssistants([
+            "presentationId": "test",
+            "assistants": [["id": "agent", "name": "Agent"]],
+          ])
+          controller.tableView.layoutIfNeeded()
+          let updated = controller.tableView.cellForRow(at: IndexPath(row: 0, section: 2))!
+          precondition(updated.accessibilityTraits.contains(.button))
+          precondition(!updated.accessibilityTraits.contains(.notEnabled))
+          precondition(controller.tableView(controller.tableView, titleForFooterInSection: 2) == nil)
+        }
       }
     }
     avatarTests()
