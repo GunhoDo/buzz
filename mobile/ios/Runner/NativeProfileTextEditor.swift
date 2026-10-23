@@ -449,13 +449,20 @@ private final class NativeProfileTextEditorViewController:
     updateNavigation()
   }
 
+  // A durable retry keeps its saved recipient even if discovery hides it.
+  // Flutter revalidates ownership before any creation writes.
+  private var canSubmitAssistant: Bool {
+    guard let selectedAssistant else { return false }
+    return fieldsLocked || assistants.contains { $0["id"] == selectedAssistant }
+  }
+
   private func updateNavigation() {
     navigationItem.rightBarButtonItem?.isEnabled = canEditDetails && hasUnsavedChanges
       && (!isChannelEditor || !canonicalChannelName.isEmpty)
       && (!isChatEditor || (
         !currentValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
           && currentValue.count <= 120
-          && (isProjectEditor || assistants.contains { $0["id"] == selectedAssistant })
+          && (isProjectEditor || canSubmitAssistant)
       ))
     navigationController?.isModalInPresentation = hasUnsavedChanges
     placeholderLabel.isHidden = !textView.text.isEmpty
@@ -497,7 +504,7 @@ private final class NativeProfileTextEditorViewController:
       onSet(name)
     } else if isChatEditor {
       guard let selectedAssistant,
-            assistants.contains(where: { $0["id"] == selectedAssistant }),
+            canSubmitAssistant,
             !currentValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
             currentValue.count <= 120 else { return }
       onSet(["name": currentValue, "assistant": selectedAssistant, "project": selectedProject ?? ""])
