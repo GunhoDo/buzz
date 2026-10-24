@@ -237,6 +237,11 @@ void main() {
         ],
         inventory: [
           listing(agent.public),
+          for (final field in ['id', 'sig'])
+            NostrEvent.fromJson(
+              listing(agent.public, time: 3, content: '{}').toJson()
+                ..[field] = '0' * (field == 'id' ? 64 : 128),
+            ),
           listing(archivedAgent.public),
           listing(removed.public),
           listing(removed.public, time: 2, content: '{}'),

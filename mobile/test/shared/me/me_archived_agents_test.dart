@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:buzz/shared/me/me_archived_agents.dart';
@@ -67,6 +68,40 @@ void main() {
       expect(await container.read(meArchivedAgentsProvider.future), {target});
     },
   );
+
+  test('slow metadata has a total deadline and cancels its stream', () async {
+    final owner = nostr.Keys.generate();
+    final relay = _ArchiveRelay(null);
+    var cancelled = false;
+    final body = StreamController<List<int>>(onCancel: () => cancelled = true);
+    final client = MockClient.streaming(
+      (_, _) async => http.StreamedResponse(body.stream, 200),
+    );
+    final container = ProviderContainer(
+      overrides: [
+        meSyncProvider.overrideWithValue(
+          MeSync(
+            relay,
+            RelayConfig(baseUrl: 'https://relay.test', nsec: owner.nsec),
+          ),
+        ),
+        meRelayInformationClientProvider.overrideWithValue(client),
+      ],
+    );
+    addTearDown(container.dispose);
+    addTearDown(client.close);
+    addTearDown(body.close);
+    final trickle = Timer.periodic(const Duration(milliseconds: 100), (_) {
+      body.add([32]);
+    });
+    addTearDown(trickle.cancel);
+    final result = await container
+        .read(meArchivedAgentsProvider.future)
+        .timeout(const Duration(seconds: 5));
+    expect(result, isEmpty);
+    expect(cancelled, isTrue);
+    expect(relay.author, isNull);
+  });
 
   test(
     'contact keys and unavailable metadata are not archive authority',

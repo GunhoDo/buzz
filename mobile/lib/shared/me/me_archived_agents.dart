@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:isolate';
 
@@ -28,12 +29,24 @@ final meArchivedAgentsProvider = FutureProvider<Set<String>>((ref) async {
         )
         .timeout(const Duration(seconds: 3));
     if (response.statusCode != 200) return {};
+    final chunks = StreamIterator(
+      response.stream.timeout(const Duration(seconds: 3)),
+    );
     final bytes = <int>[];
-    await for (final chunk in response.stream.timeout(
-      const Duration(seconds: 3),
-    )) {
-      if (bytes.length + chunk.length > 256 * 1024) return {};
-      bytes.addAll(chunk);
+    try {
+      await (() async {
+        while (await chunks.moveNext()) {
+          final chunk = chunks.current;
+          if (bytes.length + chunk.length > 256 * 1024) {
+            throw const FormatException(
+              'Relay information exceeds size limit.',
+            );
+          }
+          bytes.addAll(chunk);
+        }
+      })().timeout(const Duration(seconds: 3));
+    } finally {
+      await chunks.cancel();
     }
     sync.check();
     final info = jsonDecode(utf8.decode(bytes));

@@ -63,7 +63,12 @@ Map<String, String> _inventoryNames(List<NostrEvent> events, String owner) {
     final id = event.getTagValue('d');
     if (id == null || !RegExp(r'^[0-9a-f]{64}$').hasMatch(id)) continue;
     // Verify before allowing a newer tombstone or record to replace a head.
-    nostr.Event.fromJson(jsonEncode(event.toJson()));
+    try {
+      nostr.Event.fromJson(jsonEncode(event.toJson()));
+    } catch (_) {
+      // A corrupt record must not hide unrelated verified agents.
+      continue;
+    }
     final previous = heads[id];
     if (previous == null || meEventIsNewer(event, previous)) heads[id] = event;
   }
