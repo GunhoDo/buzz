@@ -19,3 +19,18 @@ stable specification after validating the design through launch and use.
 - Publish the matching gateway image and chart, update deployment configuration,
   then enable the new relay capability. Verify enrollment, delivery, renewal and
   revocation on a physical device before production activation.
+
+## Channel identifier grammar
+
+Push filters use the same UUID identifiers as Buzz channels, including UUIDv5
+starter channels. The relay advertises `h_grammar: "uuid-lowercase"`: exactly
+36 lowercase ASCII characters in hyphenated `8-4-4-4-12` hexadecimal form,
+without a version or variant restriction. Canonical text is required because
+filters match event tags exactly. Array and string limits, community scoping,
+and channel membership checks still apply.
+
+Mobile accepts both this descriptor and the older `uuid-v4-lowercase`
+descriptor. Older relays continue to reject non-v4 channel filters. Deploy
+mobile support for `uuid-lowercase` before changing the relay advertisement:
+older mobile clients reject that descriptor and cannot renew their push leases.
+The new grammar does not alter existing UUIDv4 subscriptions.

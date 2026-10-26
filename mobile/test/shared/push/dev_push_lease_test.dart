@@ -22,6 +22,17 @@ void main() {
   final grant = _grant(relay.public);
   final now = DateTime.fromMillisecondsSinceEpoch(1752620000 * 1000);
 
+  for (final grammar in ['uuid-lowercase', 'uuid-v4-lowercase']) {
+    test('accepts the $grammar relay descriptor', () {
+      final information = _descriptorJson(relay.public);
+      (information['push'] as Map<String, dynamic>)['h_grammar'] = grammar;
+      expect(
+        BuzzPushLeaseDescriptor.fromRelayInformation(information).origin,
+        descriptor.origin,
+      );
+    });
+  }
+
   test('legacy capability does not enable Buzz push', () {
     final information = _descriptorJson(relay.public);
     information['supported_extensions'] = ['nip-pl'];
@@ -41,7 +52,11 @@ void main() {
       memberPubkey: signer.public,
       subscriptions: [
         BuzzPushSubscription(
-          filter: BuzzPushFilter(kinds: const [9], pTags: [signer.public]),
+          filter: BuzzPushFilter(
+            kinds: const [9],
+            pTags: [signer.public],
+            hTags: const ['fee88e92-da9f-5958-a910-48db3264ad38'],
+          ),
           notificationClass: 'default',
         ),
       ],
@@ -92,6 +107,7 @@ void main() {
           'filter': {
             'kinds': [9],
             '#p': [signer.public],
+            '#h': ['fee88e92-da9f-5958-a910-48db3264ad38'],
           },
           'class': 'default',
         },
@@ -513,7 +529,7 @@ Map<String, dynamic> _descriptorJson(String relayPubkey) => {
       {'id': 'relay-v1', 'pubkey': relayPubkey, 'current': true},
     ],
     'push_kinds': [9, 40002, 45001, 45003],
-    'h_grammar': 'uuid-v4-lowercase',
+    'h_grammar': 'uuid-lowercase',
     'class_support': {
       'apns': ['default'],
     },

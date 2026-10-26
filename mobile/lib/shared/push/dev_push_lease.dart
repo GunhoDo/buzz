@@ -115,7 +115,9 @@ class BuzzPushLeaseDescriptor {
       );
     }
     final hGrammar = _nonEmptyString(push['h_grammar'], name: 'h_grammar');
-    if (hGrammar != 'uuid-v4-lowercase') {
+    // Older relays advertise the narrower grammar. Keep UUIDv4 leases working
+    // during rollout; those relays still reject non-v4 channels themselves.
+    if (hGrammar != 'uuid-lowercase' && hGrammar != 'uuid-v4-lowercase') {
       throw const FormatException('Unsupported push h_grammar');
     }
 
