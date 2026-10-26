@@ -38,7 +38,7 @@ class _QrScannerCamera extends HookWidget {
       opacity: ready || state.error != null ? 1 : 0,
       duration: MediaQuery.disableAnimationsOf(context) || state.error != null
           ? Duration.zero
-          : const Duration(milliseconds: 120),
+          : const Duration(milliseconds: 180),
       curve: Curves.easeOut,
       child: MobileScanner(
         controller: controller,
