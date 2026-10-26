@@ -24,6 +24,7 @@ class _PairingWelcomeView extends HookWidget {
   final Widget? setupContent;
   final String builderlabLabel;
   final bool builderlabBusy;
+  final bool signInPending;
   final ValueChanged<Uri> onOpenCommunity;
 
   const _PairingWelcomeView({
@@ -51,6 +52,7 @@ class _PairingWelcomeView extends HookWidget {
     this.setupContent,
     this.builderlabLabel = 'Connect to Builderlab',
     this.builderlabBusy = false,
+    this.signInPending = false,
   });
 
   @override
@@ -124,7 +126,7 @@ class _PairingWelcomeView extends HookWidget {
                 const SizedBox(height: Grid.xs),
               ],
               if (page == 1) ...[
-                if (!showConnectionOptions && !builderlabBusy)
+                if (!showConnectionOptions && !signInPending)
                   SizedBox(
                     width: double.infinity,
                     child: FilledButton(

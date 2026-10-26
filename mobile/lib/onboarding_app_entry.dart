@@ -153,6 +153,7 @@ class OnboardingAppEntry extends HookConsumerWidget {
             : () => unawaited(flow.signInAccount()),
         accountStatus: status,
         builderlabBusy: busy,
+        signInPending: signingIn || busy,
         setupContent: flow != null && inlineSetup
             ? Column(
                 mainAxisSize: MainAxisSize.min,

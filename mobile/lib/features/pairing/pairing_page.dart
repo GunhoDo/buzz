@@ -61,6 +61,7 @@ class PairingPage extends HookConsumerWidget {
   final Widget? setupContent;
   final String builderlabLabel;
   final bool builderlabBusy;
+  final bool signInPending;
 
   const PairingPage({
     super.key,
@@ -81,6 +82,7 @@ class PairingPage extends HookConsumerWidget {
     this.setupContent,
     this.builderlabLabel = 'Connect to Builderlab',
     this.builderlabBusy = false,
+    this.signInPending = false,
   });
 
   @override
@@ -334,6 +336,7 @@ class PairingPage extends HookConsumerWidget {
                       setupContent: setupContent,
                       builderlabLabel: builderlabLabel,
                       builderlabBusy: builderlabBusy,
+                      signInPending: signInPending,
                       codeController: codeController,
                       isBusy: isBusy,
                       pairingCodeExpanded: pairingCodeExpanded.value,

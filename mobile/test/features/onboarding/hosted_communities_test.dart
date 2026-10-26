@@ -1,3 +1,4 @@
+import 'package:buzz/shared/hosted/hosted_community_creation.dart';
 import 'package:buzz/shared/hosted/hosted_environment.dart';
 import 'package:buzz/features/onboarding/hosted_connect_page.dart';
 import 'package:buzz/hosted_app_gate.dart';
@@ -228,6 +229,17 @@ void main() {
         );
         await tester.tap(find.bySemanticsLabel('Cancel sign-in').hitTestable());
         await tester.pumpAndSettle();
+        expect(find.text('Scan a QR code').hitTestable(), findsOneWidget);
+        // Target sign-in remains pending when an Android Custom Tab closes.
+        await f.flow.start(HostedCreateCommunity('new-community'));
+        await tester.pumpAndSettle();
+        expect(f.flow.accountOnly, isFalse);
+        expect(f.flow.stage, HostedFlowStage.signIn);
+        expect(find.text('Cancel sign-in').hitTestable(), findsOneWidget);
+        expect(find.text('Scan a QR code').hitTestable(), findsNothing);
+        await tester.tap(find.text('Cancel sign-in').hitTestable());
+        await tester.pumpAndSettle();
+        expect(f.flow.stage, HostedFlowStage.idle);
         expect(find.text('Scan a QR code').hitTestable(), findsOneWidget);
         f.expired = false;
         await f.flow.signInAccount(openBrowser: false);
