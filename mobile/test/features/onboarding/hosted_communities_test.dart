@@ -298,7 +298,27 @@ void main() {
 }
 
 Future<void> revealOptions(WidgetTester tester) async {
+  // Ordinary double taps must not expose the hidden connection options.
   await tester.tapAt(const Offset(24, 120));
   await tester.pump(const Duration(milliseconds: 50));
   await tester.tapAt(const Offset(24, 120));
+  await tester.pumpAndSettle();
+  expect(find.text('Use a pairing code').hitTestable(), findsNothing);
+
+  for (var tap = 0; tap < 2; tap++) {
+    final first = await tester.createGesture(pointer: 11);
+    final second = await tester.createGesture(pointer: 12);
+    await first.down(
+      const Offset(24, 120),
+      timeStamp: Duration(milliseconds: tap * 70),
+    );
+    await second.down(
+      const Offset(70, 120),
+      timeStamp: Duration(milliseconds: tap * 70),
+    );
+    await tester.pump(const Duration(milliseconds: 20));
+    await first.up(timeStamp: Duration(milliseconds: tap * 70 + 20));
+    await second.up(timeStamp: Duration(milliseconds: tap * 70 + 20));
+    await tester.pump(const Duration(milliseconds: 50));
+  }
 }

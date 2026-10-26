@@ -345,10 +345,7 @@ class _PairingWelcomeView extends HookWidget {
               child: Column(
                 children: [
                   Expanded(
-                    // Keep double-tap recognition off the action buttons so
-                    // their single taps do not wait for the double-tap timeout.
-                    child: GestureDetector(
-                      behavior: HitTestBehavior.opaque,
+                    child: _TwoFingerDoubleTapSurface(
                       onDoubleTap: canRevealOptions ? revealOptions : null,
                       child: Center(
                         child: Column(
