@@ -138,6 +138,8 @@ void main() {
       await tester.binding.setSurfaceSize(const Size(393, 852));
       addTearDown(() => tester.binding.setSurfaceSize(null));
 
+      final cameraStart = Completer<void>();
+      fakeScannerPlatform.startGate = cameraStart.future;
       var scannerClosed = false;
       await tester.pumpWidget(
         MaterialApp(
@@ -212,6 +214,21 @@ void main() {
       expect(openingRadius, inExclusiveRange(18, 40));
 
       await tester.pumpAndSettle();
+      final readyFade = find.byKey(const ValueKey('qr-camera-ready-fade'));
+      final previewFade = find
+          .descendant(of: readyFade, matching: find.byType(FadeTransition))
+          .first;
+      expect(tester.widget<FadeTransition>(previewFade).opacity.value, 0);
+      cameraStart.complete();
+      await tester.pump();
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 60));
+      expect(
+        tester.widget<FadeTransition>(previewFade).opacity.value,
+        inExclusiveRange(0, 1),
+      );
+      await tester.pumpAndSettle();
+      expect(tester.widget<FadeTransition>(previewFade).opacity.value, 1);
       expect(
         tester.widget<ClipRSuperellipse>(portal).borderRadius,
         BorderRadius.circular(40),
@@ -466,6 +483,7 @@ class _FakeMobileScannerPlatform extends MobileScannerPlatform {
   var _isDisposed = false;
   var stopCalls = 0;
   var startCalls = 0;
+  Future<void>? startGate;
 
   @override
   Stream<BarcodeCapture?> get barcodesStream => _barcodes.stream;
@@ -480,6 +498,7 @@ class _FakeMobileScannerPlatform extends MobileScannerPlatform {
   @override
   Future<MobileScannerViewAttributes> start(StartOptions startOptions) async {
     startCalls++;
+    await startGate;
     return const MobileScannerViewAttributes(
       cameraDirection: CameraFacing.back,
       currentTorchMode: TorchState.unavailable,
