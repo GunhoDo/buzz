@@ -6,6 +6,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/physics.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter/scheduler.dart';
 import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:buzz/shared/theme/buzz_icons.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
@@ -44,7 +45,10 @@ Future<bool> usesDynamicIslandQrScannerPortal() async {
 /// Callers determine device support with
 /// [usesDynamicIslandQrScannerPortal]. Standard devices reveal the camera
 /// behind their existing app surface with [FallbackPairingQrScanner].
-Future<String?> showDynamicIslandPairingQrScanner(BuildContext context) {
+Future<String?> showDynamicIslandPairingQrScanner(
+  BuildContext context, {
+  ValueChanged<double>? onProgress,
+}) {
   return Navigator.of(context).push<String>(
     PageRouteBuilder<String>(
       opaque: false,
@@ -52,7 +56,8 @@ Future<String?> showDynamicIslandPairingQrScanner(BuildContext context) {
       barrierDismissible: false,
       transitionDuration: Duration.zero,
       reverseTransitionDuration: Duration.zero,
-      pageBuilder: (_, _, _) => const _DynamicIslandQrScannerPortal(),
+      pageBuilder: (_, _, _) =>
+          _DynamicIslandQrScannerPortal(onProgress: onProgress),
     ),
   );
 }

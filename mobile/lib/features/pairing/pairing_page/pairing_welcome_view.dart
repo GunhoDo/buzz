@@ -124,7 +124,16 @@ class _PairingWelcomeView extends HookWidget {
                 const SizedBox(height: Grid.xs),
               ],
               if (page == 1) ...[
-                if (HostedEnvironment.enabled)
+                if (!showConnectionOptions && !builderlabBusy)
+                  SizedBox(
+                    width: double.infinity,
+                    child: FilledButton(
+                      style: context._onboardingButtonStyle,
+                      onPressed: isBusy ? null : onScan,
+                      child: const Text('Scan a QR code'),
+                    ),
+                  )
+                else if (HostedEnvironment.enabled)
                   FilledButton(
                     style: context._onboardingGlassButtonStyle,
                     onPressed: onBuilderlab,
@@ -138,12 +147,16 @@ class _PairingWelcomeView extends HookWidget {
                   ),
                 if (!showConnectionOptions) ...[
                   const SizedBox(height: Grid.xxs),
-                  TextButton(
-                    style: context._onboardingGhostButtonStyle,
-                    onPressed: isBusy
-                        ? null
-                        : () => optionsExpanded.value = !optionsExpanded.value,
-                    child: const Text('Other options'),
+                  SizedBox(
+                    width: double.infinity,
+                    child: TextButton(
+                      style: context._onboardingGhostButtonStyle,
+                      onPressed: isBusy
+                          ? null
+                          : () =>
+                                optionsExpanded.value = !optionsExpanded.value,
+                      child: const Text('Other options'),
+                    ),
                   ),
                 ],
                 if (showConnectionOptions) ...connectionActions(),
@@ -455,7 +468,13 @@ class _PairingWelcomeView extends HookWidget {
                             }
                           },
                           onOpenCommunity: onOpenCommunity,
-                          onScan: isBusy ? null : onScan,
+                          onBuilderlab: onBuilderlab == null
+                              ? null
+                              : () {
+                                  optionsExpanded.value = false;
+                                  onBuilderlab!();
+                                },
+                          builderlabLabel: builderlabLabel,
                           onPairing: isBusy ? null : onAlreadyUseBuzz,
                         ),
                       ),

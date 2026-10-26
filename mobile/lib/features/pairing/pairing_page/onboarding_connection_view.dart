@@ -7,7 +7,8 @@ class _OnboardingConnectionView extends HookWidget {
     required this.onCommunityLink,
     required this.onBack,
     required this.onOpenCommunity,
-    required this.onScan,
+    required this.onBuilderlab,
+    required this.builderlabLabel,
     required this.onPairing,
   });
 
@@ -15,7 +16,8 @@ class _OnboardingConnectionView extends HookWidget {
   final VoidCallback? onCommunityLink;
   final VoidCallback? onBack;
   final ValueChanged<Uri> onOpenCommunity;
-  final VoidCallback? onScan;
+  final VoidCallback? onBuilderlab;
+  final String builderlabLabel;
   final VoidCallback? onPairing;
 
   double _textProgress(double progress, bool opening) =>
@@ -145,7 +147,7 @@ class _OnboardingConnectionView extends HookWidget {
                                   child: const _ConnectionHeading(
                                     title: 'Connect to a community',
                                     subtitle:
-                                        'Scan a QR code or enter a community link to continue.',
+                                        'Sign in with email or enter a community link to continue.',
                                   ),
                                 ),
                                 _ConnectionMotionLayer(
@@ -173,11 +175,10 @@ class _OnboardingConnectionView extends HookWidget {
                             active: !enteringLink,
                             maintainSize: true,
                             child: _OnboardingChoiceContainer(
-                              title: 'Scan a QR code',
-                              icon: BuzzIcons.qrcode,
-                              subtitle:
-                                  'Scan a community or desktop pairing code.',
-                              onTap: onScan,
+                              title: builderlabLabel,
+                              icon: BuzzIcons.mail,
+                              subtitle: 'Use your email address to connect.',
+                              onTap: onBuilderlab,
                               onIconDoubleTap: onPairing,
                             ),
                           ),

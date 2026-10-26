@@ -168,7 +168,7 @@ class OnboardingAppEntry extends HookConsumerWidget {
             ? 'Connecting…'
             : connected
             ? 'Continue with Builderlab'
-            : 'Sign in with builderlab',
+            : 'Sign in with email',
         onWelcomeBack: back,
         onAlreadyUseBuzz: () => existingUser.value = true,
       ),

@@ -55,11 +55,11 @@ void main() {
         );
         expect(tester.getBottomRight(linkCard).dy, closeTo(876, 1));
         final scanCard = find.ancestor(
-          of: find.text('Scan a QR code').hitTestable(),
+          of: find.text('Sign in with email').hitTestable(),
           matching: find.byType(InkWell),
         );
         final subtitle = find
-            .text('Scan a QR code or enter a community link to continue.')
+            .text('Sign in with email or enter a community link to continue.')
             .hitTestable();
         expect(
           tester.getTopLeft(scanCard).dy - tester.getBottomLeft(subtitle).dy,
@@ -114,7 +114,7 @@ void main() {
         await tester.binding.handlePopRoute();
         await tester.pumpAndSettle();
         expect(tester.testTextInput.isVisible, isFalse);
-        expect(find.text('Scan a QR code').hitTestable(), findsOneWidget);
+        expect(find.text('Sign in with email').hitTestable(), findsOneWidget);
         await tester.tap(find.text('Enter a community link').hitTestable());
         await tester.pump();
         // A hardware keyboard produces no software-keyboard notification.
@@ -162,7 +162,7 @@ void main() {
         );
         await tester.tap(find.text('Back').hitTestable());
         await tester.pumpAndSettle();
-        expect(find.text('Scan a QR code').hitTestable(), findsOneWidget);
+        expect(find.text('Sign in with email').hitTestable(), findsOneWidget);
         await tester.pumpWidget(const SizedBox.shrink());
         await tester.pumpAndSettle();
         await f.dispose();
@@ -195,12 +195,9 @@ void main() {
           ),
         );
         await tester.pumpAndSettle();
-        expect(
-          find.text('Sign in with builderlab').hitTestable(),
-          findsOneWidget,
-        );
+        expect(find.text('Scan a QR code').hitTestable(), findsOneWidget);
         expect(find.text('Enter a community link').hitTestable(), findsNothing);
-        expect(find.text('Scan a QR code'), findsNothing);
+        expect(find.text('Sign in with email').hitTestable(), findsNothing);
         expect(find.text('Use pairing code'), findsNothing);
         await tester.tap(find.text('Other options'));
         await tester.pumpAndSettle();
@@ -208,7 +205,7 @@ void main() {
           find.text('Enter a community link').hitTestable(),
           findsOneWidget,
         );
-        expect(find.text('Scan a QR code').hitTestable(), findsOneWidget);
+        expect(find.text('Sign in with email').hitTestable(), findsOneWidget);
         expect(find.text('Use pairing code').hitTestable(), findsNothing);
         await tester.tap(find.byType(BackButton));
         await tester.pumpAndSettle();
@@ -219,7 +216,9 @@ void main() {
         await tester.pumpAndSettle();
         expect(find.text('Other options').hitTestable(), findsOneWidget);
         expect(find.text('Enter a community link').hitTestable(), findsNothing);
-        await tester.tap(find.text('Sign in with builderlab'));
+        await tester.tap(find.text('Other options'));
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('Sign in with email').hitTestable());
         await tester.pump();
         await tester.pump(const Duration(milliseconds: 300));
         expect(f.browser.startedIntent, {'type': 'account'});
@@ -229,10 +228,7 @@ void main() {
         );
         await tester.tap(find.bySemanticsLabel('Cancel sign-in').hitTestable());
         await tester.pumpAndSettle();
-        expect(
-          find.text('Sign in with builderlab').hitTestable(),
-          findsOneWidget,
-        );
+        expect(find.text('Scan a QR code').hitTestable(), findsOneWidget);
         f.expired = false;
         await f.flow.signInAccount(openBrowser: false);
         await tester.pumpAndSettle();
