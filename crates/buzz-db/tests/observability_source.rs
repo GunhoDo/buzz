@@ -1919,8 +1919,8 @@ fn every_production_event_insert_runs_the_follow_up_hook() {
     );
 }
 
-// Fixed channel-less kinds cannot be channel rosters. The startup probe must
-// exercise the retained DB backstop directly and roll back all its writes.
+// Fixed channel-less kinds cannot be channel rosters, and the replica-floor
+// startup probe rolls back all its writes.
 // Exemptions match by function header, so a kind 39002 insert added inside one
 // of these functions would pass the policy; keep them single-purpose.
 const EVENT_INSERT_ROSTER_GUARD_EXCEPTIONS: [&str; 3] = [

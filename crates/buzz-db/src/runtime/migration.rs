@@ -771,7 +771,19 @@ mod postgres_tests {
         let mut migrations: Vec<_> = MIGRATOR.iter().collect();
         migrations.sort_by_key(|migration| migration.version);
 
-        assert_eq!(migrations.len(), 73);
+        assert_eq!(migrations.len(), 74);
+        assert_eq!(migrations[73].version, 74);
+        let retire_roster_fence = strip_sql_comments(migrations[73].sql.as_str());
+        for statement in [
+            "SET LOCAL lock_timeout = '5s';",
+            "DROP TRIGGER trg_events_guard_channel_roster_snapshot ON events;",
+            "DROP FUNCTION guard_channel_roster_snapshot();",
+        ] {
+            assert!(
+                retire_roster_fence.contains(statement),
+                "0074 must run {statement}"
+            );
+        }
         assert_eq!(migrations[72].version, 73);
         assert_eq!(migrations[71].version, 72);
         assert_eq!(migrations[70].version, 71);
@@ -1313,31 +1325,8 @@ mod postgres_tests {
         assert!(roster_fence.contains("snapshot_members IS DISTINCT FROM canonical_members"));
         assert!(roster_fence.contains("ERRCODE = '23514'"));
 
-        // Fresh desired-state bootstrap must install the identical executable
-        // fence as migration 0032. CI and isolated relay startup use schema.sql
-        // without running migrations, so drift reopens rolling-deploy races.
-        // The desired state keeps the function and its trigger in separate
-        // files, so compare each statement rather than one contiguous span.
-        fn extract_span<'a>(sql: &'a str, start: &str, end: &str) -> &'a str {
-            let begin = sql.find(start).expect("span start");
-            let relative_end = sql[begin..].find(end).expect("span end");
-            &sql[begin..begin + relative_end + end.len()]
-        }
-        for (start, end) in [
-            (
-                "CREATE OR REPLACE FUNCTION guard_channel_roster_snapshot()",
-                "$$ LANGUAGE plpgsql;",
-            ),
-            (
-                "CREATE TRIGGER trg_events_guard_channel_roster_snapshot",
-                "    FOR EACH ROW EXECUTE FUNCTION guard_channel_roster_snapshot();",
-            ),
-        ] {
-            assert_eq!(
-                extract_span(roster_fence, start, end),
-                extract_span(&desired_schema, start, end)
-            );
-        }
+        // Migration 0074 retires this fence; the desired state never installs it.
+        assert!(!desired_schema.contains("guard_channel_roster_snapshot"));
 
         // The single-row heartbeat table is updated continuously. Prevent
         // autovacuum from truncating its heap so standby queries are not

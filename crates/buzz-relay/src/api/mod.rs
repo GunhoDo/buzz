@@ -637,6 +637,15 @@ pub mod relay_members {
                 // without it would only be found by an owner-to-agent lookup
                 // at revoke time; make them reconnect with the owner attached.
                 state.disconnect_unowned_agent_clusterwide(tenant, &agent.to_bytes());
+                // Rosters show `bot` for an owned agent, so the agent's
+                // rosters now show the wrong label. Republish them in the
+                // background so a contended roster lock cannot hold first
+                // AUTH past its deadline.
+                crate::handlers::side_effects::spawn_agent_roster_republish(
+                    tenant,
+                    std::sync::Arc::new(state.clone()),
+                    agent.to_bytes().to_vec(),
+                );
                 OwnerLink::Linked
             }
             // Another writer stored an owner first.

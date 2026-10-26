@@ -1137,6 +1137,30 @@ async fn run_relay_main(boot: BootTracker) -> anyhow::Result<()> {
     }
     step.finish();
 
+    // One-shot operator step after upgrading to computed `member`/`bot`
+    // labels: republish rosters that older relays published with the stored
+    // label. Off by default so no replica scans at every startup; both labels
+    // have the same permissions, so a stale one is only cosmetic until then.
+    if std::env::var("BUZZ_RECONCILE_BOT_ROSTERS").is_ok() {
+        let role_roster_state = Arc::clone(&state);
+        tokio::spawn(async move {
+            match buzz_relay::handlers::side_effects::reconcile_ordinary_role_rosters(
+                &role_roster_state,
+            )
+            .await
+            {
+                Ok(summary) => info!(
+                    count = summary.repaired,
+                    failed = summary.failed,
+                    "member/bot channel rosters reconciled"
+                ),
+                Err(error) => {
+                    tracing::warn!(%error, "member/bot channel roster reconciliation failed")
+                }
+            }
+        });
+    }
+
     // Emit kind:39000/39002 discovery events for channels that exist in the DB
     // but don't have corresponding events (e.g. seeded via direct SQL inserts).
     // Only runs when BUZZ_RECONCILE_CHANNELS=true (dev/CI environments).

@@ -105,14 +105,14 @@ async fn joined_notices(
 /// One event adds a new person, leaves an existing member alone, takes a
 /// per-`p` role, and reports a refused agent without refusing the others.
 /// Mutations: refuse the event on any refused person → RED; read only the
-/// first `p` → later people missing → RED; ignore the `p` role → agent is a
-/// member, not a bot → RED; notify a no-op re-add → two notices → RED.
+/// first `p` → later people missing → RED; ignore the `p` role → the admin
+/// is a member → RED; notify a no-op re-add → two notices → RED.
 #[tokio::test]
 #[ignore = "requires Postgres"]
 async fn put_user_adds_each_person_and_reports_each_result() {
     let state = state().await;
     let tenant = community(&state, "put-user-batch").await;
-    let (owner, existing, person, bot, refusing) = (
+    let (owner, existing, person, admin, refusing) = (
         Keys::generate(),
         Keys::generate(),
         Keys::generate(),
@@ -131,10 +131,10 @@ async fn put_user_adds_each_person_and_reports_each_result() {
     .await;
     refuse_third_party_adds(&state, &tenant, &refusing).await;
 
-    let (existing_hex, person_hex, bot_hex, refusing_hex) = (
+    let (existing_hex, person_hex, admin_hex, refusing_hex) = (
         existing.public_key().to_hex(),
         person.public_key().to_hex(),
-        bot.public_key().to_hex(),
+        admin.public_key().to_hex(),
         refusing.public_key().to_hex(),
     );
     let result = ingest(
@@ -147,7 +147,7 @@ async fn put_user_adds_each_person_and_reports_each_result() {
                 &[&existing_hex],
                 &[&person_hex],
                 &[&refusing_hex],
-                &[&bot_hex, "bot"],
+                &[&admin_hex, "admin"],
                 &[&person_hex],
             ],
             &[],
@@ -160,7 +160,7 @@ async fn put_user_adds_each_person_and_reports_each_result() {
     assert_eq!(
         report(&result.message),
         serde_json::json!({
-            "added": [person_hex, bot_hex],
+            "added": [person_hex, admin_hex],
             "already_member": [existing_hex],
             "rejected": [{
                 "reason": "policy:nobody — this agent has disabled external channel additions",
@@ -176,8 +176,10 @@ async fn put_user_adds_each_person_and_reports_each_result() {
         Some("member")
     );
     assert_eq!(
-        role_of(&state, &tenant, channel_id, &bot).await.as_deref(),
-        Some("bot")
+        role_of(&state, &tenant, channel_id, &admin)
+            .await
+            .as_deref(),
+        Some("admin")
     );
     assert_eq!(role_of(&state, &tenant, channel_id, &refusing).await, None);
     assert_eq!(
@@ -190,7 +192,7 @@ async fn put_user_adds_each_person_and_reports_each_result() {
     );
 
     let roster = group_state_tags(&state, &tenant, channel_id, 39002).await;
-    for hex in [&person_hex, &bot_hex] {
+    for hex in [&person_hex, &admin_hex] {
         assert!(
             roster.iter().any(|tag| tag[0] == "p" && &tag[1] == hex),
             "{roster:?}"
