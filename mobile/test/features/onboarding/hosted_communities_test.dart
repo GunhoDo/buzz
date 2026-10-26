@@ -46,7 +46,7 @@ void main() {
           ),
         );
         await tester.pumpAndSettle();
-        await tester.tap(find.text('Other options'));
+        await revealOptions(tester);
         await tester.pumpAndSettle();
         tester.view.physicalSize = const Size(420, 900);
         await tester.pumpAndSettle();
@@ -56,11 +56,11 @@ void main() {
         );
         expect(tester.getBottomRight(linkCard).dy, closeTo(876, 1));
         final scanCard = find.ancestor(
-          of: find.text('Sign in with email').hitTestable(),
+          of: find.text('Use a pairing code').hitTestable(),
           matching: find.byType(InkWell),
         );
         final subtitle = find
-            .text('Sign in with email or enter a community link to continue.')
+            .text('Enter a community link or use a pairing code to continue.')
             .hitTestable();
         expect(
           tester.getTopLeft(scanCard).dy - tester.getBottomLeft(subtitle).dy,
@@ -115,7 +115,7 @@ void main() {
         await tester.binding.handlePopRoute();
         await tester.pumpAndSettle();
         expect(tester.testTextInput.isVisible, isFalse);
-        expect(find.text('Sign in with email').hitTestable(), findsOneWidget);
+        expect(find.text('Use a pairing code').hitTestable(), findsOneWidget);
         await tester.tap(find.text('Enter a community link').hitTestable());
         await tester.pump();
         // A hardware keyboard produces no software-keyboard notification.
@@ -148,12 +148,7 @@ void main() {
         await tester.pumpAndSettle();
         expect(tester.testTextInput.isVisible, isFalse);
         expect(find.text('Use pairing code'), findsNothing);
-        final developerTrigger = find
-            .byKey(const Key('developer-pairing-trigger'))
-            .hitTestable();
-        await tester.tap(developerTrigger);
-        await tester.pump(const Duration(milliseconds: 50));
-        await tester.tap(developerTrigger);
+        await tester.tap(find.text('Use a pairing code').hitTestable());
         await tester.pumpAndSettle();
         expect(
           find
@@ -163,7 +158,10 @@ void main() {
         );
         await tester.tap(find.text('Back').hitTestable());
         await tester.pumpAndSettle();
-        expect(find.text('Sign in with email').hitTestable(), findsOneWidget);
+        expect(
+          find.text('or sign in with email').hitTestable(),
+          findsOneWidget,
+        );
         await tester.pumpWidget(const SizedBox.shrink());
         await tester.pumpAndSettle();
         await f.dispose();
@@ -200,26 +198,27 @@ void main() {
         expect(find.text('Enter a community link').hitTestable(), findsNothing);
         expect(find.text('Sign in with email').hitTestable(), findsNothing);
         expect(find.text('Use pairing code'), findsNothing);
-        await tester.tap(find.text('Other options'));
+        await revealOptions(tester);
         await tester.pumpAndSettle();
         expect(
           find.text('Enter a community link').hitTestable(),
           findsOneWidget,
         );
-        expect(find.text('Sign in with email').hitTestable(), findsOneWidget);
+        expect(find.text('Use a pairing code').hitTestable(), findsOneWidget);
         expect(find.text('Use pairing code').hitTestable(), findsNothing);
         await tester.tap(find.byType(BackButton));
         await tester.pumpAndSettle();
         expect(find.text('Enter a community link').hitTestable(), findsNothing);
-        await tester.tap(find.text('Other options'));
+        await revealOptions(tester);
         await tester.pumpAndSettle();
         await tester.binding.handlePopRoute();
         await tester.pumpAndSettle();
-        expect(find.text('Other options').hitTestable(), findsOneWidget);
+        expect(
+          find.text('or sign in with email').hitTestable(),
+          findsOneWidget,
+        );
         expect(find.text('Enter a community link').hitTestable(), findsNothing);
-        await tester.tap(find.text('Other options'));
-        await tester.pumpAndSettle();
-        await tester.tap(find.text('Sign in with email').hitTestable());
+        await tester.tap(find.text('or sign in with email').hitTestable());
         await tester.pump();
         await tester.pump(const Duration(milliseconds: 300));
         expect(f.browser.startedIntent, {'type': 'account'});
@@ -296,4 +295,10 @@ void main() {
     },
     skip: HostedEnvironment.authDomains.isEmpty,
   );
+}
+
+Future<void> revealOptions(WidgetTester tester) async {
+  await tester.tapAt(const Offset(24, 120));
+  await tester.pump(const Duration(milliseconds: 50));
+  await tester.tapAt(const Offset(24, 120));
 }

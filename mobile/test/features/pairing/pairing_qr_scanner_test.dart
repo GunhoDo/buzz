@@ -275,6 +275,11 @@ void main() {
         expect(tester.widget<Opacity>(opacity).opacity, 1);
         await tester.tap(find.text('Scan a QR code').hitTestable());
         await tester.pump();
+        // Opening must begin without waiting for the welcome double-tap timeout.
+        expect(
+          find.byKey(const ValueKey('dynamic-island-qr-scanner-portal')),
+          findsOneWidget,
+        );
         await tester.pump(const Duration(milliseconds: 100));
         if (!reduced) {
           final portal = find.byKey(
@@ -296,12 +301,28 @@ void main() {
           tester.widget<Transform>(scale).transform.storage[0],
           closeTo(reduced ? 1 : 0.96, 0.001),
         );
-        expect(find.text('Other options').hitTestable(), findsNothing);
+        expect(
+          find
+              .ancestor(
+                of: find.text('Scan a QR code'),
+                matching: find.byType(FilledButton),
+              )
+              .hitTestable(),
+          findsNothing,
+        );
         await tester.tapAt(const Offset(196.5, 700));
         await tester.pumpAndSettle();
         expect(tester.widget<Opacity>(opacity).opacity, 1);
         expect(tester.widget<Transform>(scale).transform.storage[0], 1);
-        expect(find.text('Other options').hitTestable(), findsOneWidget);
+        expect(
+          find
+              .ancestor(
+                of: find.text('Scan a QR code'),
+                matching: find.byType(FilledButton),
+              )
+              .hitTestable(),
+          findsOneWidget,
+        );
         expect(tester.takeException(), isNull);
         await tester.pumpWidget(const SizedBox.shrink());
         await tester.pumpAndSettle();

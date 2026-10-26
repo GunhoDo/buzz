@@ -13,6 +13,7 @@ import 'package:flutter/cupertino.dart'
 import 'package:flutter/foundation.dart';
 import '../../shared/widgets/frosted_app_bar.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter/semantics.dart';
 import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:buzz/shared/theme/buzz_icons.dart';
