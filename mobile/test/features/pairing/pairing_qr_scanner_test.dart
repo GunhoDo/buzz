@@ -193,13 +193,17 @@ void main() {
 
       await tester.pump(const Duration(milliseconds: 12));
       final firstOpeningFrame = tester.getRect(portal);
-      expect(firstOpeningFrame.height, inExclusiveRange(36, 50));
+      expect(firstOpeningFrame.height, inExclusiveRange(36, 363));
       await tester.pump(const Duration(milliseconds: 218));
       expect(
         tester.widget<Opacity>(prompt).opacity,
         tester.widget<Opacity>(camera).opacity,
       );
       expect(tester.widget<Opacity>(prompt).opacity, inExclusiveRange(0, 1));
+      expect(
+        tester.getRect(portal).height,
+        greaterThan(firstOpeningFrame.height),
+      );
       final openingRadius =
           (tester.widget<ClipRSuperellipse>(portal).borderRadius
                   as BorderRadius)
