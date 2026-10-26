@@ -2,8 +2,8 @@ part of '../pairing_qr_scanner.dart';
 
 // A smooth, non-bouncy spring inspired by Apple's public motion guidance;
 // these are our timings, not private Dynamic Island animation constants.
-const _dynamicIslandOpenDuration = Duration(milliseconds: 280);
-const _dynamicIslandCloseDuration = Duration(milliseconds: 280);
+const _dynamicIslandOpenDuration = Duration(milliseconds: 230);
+const _dynamicIslandCloseDuration = Duration(milliseconds: 230);
 
 class _DynamicIslandQrScannerPortal extends HookWidget {
   const _DynamicIslandQrScannerPortal({this.onProgress});
