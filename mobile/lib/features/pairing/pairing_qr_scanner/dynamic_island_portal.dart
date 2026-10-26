@@ -155,13 +155,6 @@ class _DynamicIslandQrScannerPortal extends HookWidget {
                       final scannerOpacity = geometry.scannerOpacityAt(
                         progress,
                       );
-                      final introLabelOpacity = isClosing.value
-                          ? 0.0
-                          : geometry.introLabelOpacityAt(progress);
-                      final promptOpacity = math.max(
-                        introLabelOpacity,
-                        scannerOpacity,
-                      );
 
                       return Positioned.fromRect(
                         rect: frame,
@@ -189,7 +182,7 @@ class _DynamicIslandQrScannerPortal extends HookWidget {
                                 ),
                                 IgnorePointer(
                                   child: Opacity(
-                                    opacity: promptOpacity,
+                                    opacity: scannerOpacity,
                                     child: Center(
                                       child: Text(
                                         'Scan a QR code',

@@ -166,6 +166,19 @@ void main() {
         const ValueKey('dynamic-island-qr-scanner-portal'),
       );
       expect(tester.getRect(portal), const Rect.fromLTWH(136.5, 11, 120, 36));
+      final prompt = find
+          .ancestor(
+            of: find.text('Scan a QR code'),
+            matching: find.byType(Opacity),
+          )
+          .first;
+      final camera = find
+          .ancestor(
+            of: find.byType(MobileScanner),
+            matching: find.byType(Opacity),
+          )
+          .first;
+      expect(tester.widget<Opacity>(prompt).opacity, 0);
       expect(find.byType(MobileScanner), findsOneWidget);
       await tester.pump();
       expect(fakeScannerPlatform.startCalls, 1);
@@ -182,6 +195,11 @@ void main() {
       final firstOpeningFrame = tester.getRect(portal);
       expect(firstOpeningFrame.height, inExclusiveRange(36, 50));
       await tester.pump(const Duration(milliseconds: 218));
+      expect(
+        tester.widget<Opacity>(prompt).opacity,
+        tester.widget<Opacity>(camera).opacity,
+      );
+      expect(tester.widget<Opacity>(prompt).opacity, inExclusiveRange(0, 1));
       final openingRadius =
           (tester.widget<ClipRSuperellipse>(portal).borderRadius
                   as BorderRadius)

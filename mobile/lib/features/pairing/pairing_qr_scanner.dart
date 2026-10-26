@@ -123,7 +123,6 @@ class DynamicIslandQrScannerGeometry {
   static const _edgeMargin = 15.0;
   static const _expandedCornerRadius = 40.0;
   static const _scannerFadeStart = 0.18;
-  static const _introLabelFadeEnd = 0.42;
 
   /// The physical-island-aligned top edge used throughout the morph.
   double get top =>
@@ -172,10 +171,5 @@ class DynamicIslandQrScannerGeometry {
       0.0,
       1.0,
     );
-  }
-
-  /// Returns the opacity of the compact prompt inside the island pill.
-  double introLabelOpacityAt(double progress) {
-    return (1 - (progress / _introLabelFadeEnd)).clamp(0.0, 1.0);
   }
 }
