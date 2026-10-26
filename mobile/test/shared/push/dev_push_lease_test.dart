@@ -33,6 +33,74 @@ void main() {
     });
   }
 
+  for (final ignored in [false, true]) {
+    test(
+      'legacy relay rejects non-v4 ${ignored ? 'ignore' : 'positive'} filters before submission',
+      () async {
+        final information = _descriptorJson(relay.public);
+        (information['push'] as Map<String, dynamic>)['h_grammar'] =
+            'uuid-v4-lowercase';
+        final legacy = BuzzPushLeaseDescriptor.fromRelayInformation(
+          information,
+        );
+        final channelFilter = BuzzPushFilter(
+          kinds: const [9],
+          hTags: const ['fee88e92-da9f-5958-a910-48db3264ad38'],
+        );
+        var submissions = 0;
+        await expectLater(
+          publishBuzzDevPushLease(
+            grant: grant,
+            descriptor: legacy,
+            nsec: signer.nsec,
+            memberPubkey: signer.public,
+            subscriptions: [
+              BuzzPushSubscription(
+                filter: ignored
+                    ? BuzzPushFilter(kinds: const [9], pTags: [signer.public])
+                    : channelFilter,
+                notificationClass: 'default',
+                ignore: ignored ? [channelFilter] : const [],
+              ),
+            ],
+            now: () => now,
+            submit:
+                ({
+                  required kind,
+                  required content,
+                  required tags,
+                  createdAt,
+                }) async {
+                  submissions++;
+                  throw StateError('incompatible lease must not be sent');
+                },
+          ),
+          throwsA(isA<BuzzPushChannelGrammarException>()),
+        );
+        expect(submissions, 0);
+      },
+    );
+  }
+
+  test('legacy relay keeps compatible subscriptions and ignores intact', () {
+    final information = _descriptorJson(relay.public);
+    (information['push'] as Map<String, dynamic>)['h_grammar'] =
+        'uuid-v4-lowercase';
+    final legacy = BuzzPushLeaseDescriptor.fromRelayInformation(information);
+    final subscriptions = buildDesiredBuzzPushSubscriptions(
+      myPubkey: signer.public,
+      channelIds: const [
+        '11111111-1111-4111-8111-111111111111',
+        '22222222-2222-4222-8222-222222222222',
+      ],
+      mutedChannelIds: const ['22222222-2222-4222-8222-222222222222'],
+    );
+    final before = buzzPushSubscriptionsFingerprint(subscriptions);
+    validateBuzzPushChannelGrammar(legacy, subscriptions);
+    expect(buzzPushSubscriptionsFingerprint(subscriptions), before);
+    expect(legacy.hGrammar, 'uuid-v4-lowercase');
+  });
+
   test('legacy capability does not enable Buzz push', () {
     final information = _descriptorJson(relay.public);
     information['supported_extensions'] = ['nip-pl'];

@@ -30,7 +30,11 @@ filters match event tags exactly. Array and string limits, community scoping,
 and channel membership checks still apply.
 
 Mobile accepts both this descriptor and the older `uuid-v4-lowercase`
-descriptor. Older relays continue to reject non-v4 channel filters. Deploy
+descriptor. Mobile checks both positive and ignore channel filters against
+the advertised grammar before enrollment or publication. A lease requiring
+non-v4 IDs on an older relay remains unavailable until that relay upgrades;
+mobile preserves all desired filters and rechecks capabilities every five
+minutes instead of sending an invalid lease. Deploy
 mobile support for `uuid-lowercase` before changing the relay advertisement:
 older mobile clients reject that descriptor and cannot renew their push leases.
 The new grammar does not alter existing UUIDv4 subscriptions.
