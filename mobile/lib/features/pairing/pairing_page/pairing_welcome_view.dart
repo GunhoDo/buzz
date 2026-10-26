@@ -323,38 +323,42 @@ class _PairingWelcomeView extends HookWidget {
         setupContent == null &&
         !signInPending &&
         !isBusy;
-    final welcome = Semantics(
-      customSemanticsActions: canRevealOptions
-          ? {
-              const CustomSemanticsAction(label: 'More connection options'):
-                  revealOptions,
-            }
-          : null,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(
-          horizontal: Grid.gutter,
-          vertical: Grid.sm,
-        ),
-        child: CustomScrollView(
-          // Stay fixed when the welcome content fits; allow only real overflow
-          // (such as the pairing form above the keyboard), with no rubber banding.
-          physics: const ClampingScrollPhysics(),
-          slivers: [
-            SliverFillRemaining(
-              hasScrollBody: false,
-              child: Column(
-                children: [
-                  Expanded(
-                    child: _TwoFingerDoubleTapSurface(
-                      onDoubleTap: canRevealOptions ? revealOptions : null,
-                      child: Center(
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            ConstrainedBox(
-                              constraints: const BoxConstraints(maxWidth: 320),
-                              child: AspectRatio(
-                                aspectRatio: 777 / 326,
+    final welcome = Padding(
+      padding: const EdgeInsets.symmetric(
+        horizontal: Grid.gutter,
+        vertical: Grid.sm,
+      ),
+      child: CustomScrollView(
+        // Stay fixed when the welcome content fits; allow only real overflow
+        // (such as the pairing form above the keyboard), with no rubber banding.
+        physics: const ClampingScrollPhysics(),
+        slivers: [
+          SliverFillRemaining(
+            hasScrollBody: false,
+            child: Column(
+              children: [
+                Expanded(
+                  child: _TwoFingerDoubleTapSurface(
+                    onDoubleTap: canRevealOptions ? revealOptions : null,
+                    child: Center(
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          ConstrainedBox(
+                            constraints: const BoxConstraints(maxWidth: 320),
+                            child: AspectRatio(
+                              aspectRatio: 777 / 326,
+                              child: Semantics(
+                                // Hidden developer entry intentionally has no
+                                // keyboard shortcut. Keep its assistive action
+                                // on the existing labelled wordmark node.
+                                customSemanticsActions: canRevealOptions
+                                    ? {
+                                        const CustomSemanticsAction(
+                                          label: 'More connection options',
+                                        ): revealOptions,
+                                      }
+                                    : null,
                                 child: OnboardingWordmark(
                                   key: const Key('pairing-buzz-wordmark'),
                                   color: context._onboardingIsDark
@@ -363,73 +367,71 @@ class _PairingWelcomeView extends HookWidget {
                                 ),
                               ),
                             ),
-                            const SizedBox(height: Grid.xxs),
-                            Text(
-                              'Your people, your agents, your projects —\nall in one place.',
-                              textAlign: TextAlign.center,
-                              style: context.textTheme.bodyLarge?.copyWith(
-                                color: context._onboardingInk,
-                              ),
+                          ),
+                          const SizedBox(height: Grid.xxs),
+                          Text(
+                            'Your people, your agents, your projects —\nall in one place.',
+                            textAlign: TextAlign.center,
+                            style: context.textTheme.bodyLarge?.copyWith(
+                              color: context._onboardingInk,
                             ),
-                          ],
-                        ),
+                          ),
+                        ],
                       ),
                     ),
                   ),
-                  const SizedBox(height: Grid.md),
-                  ConstrainedBox(
-                    constraints: const BoxConstraints(maxWidth: 440),
-                    child: SizedBox(
-                      width: double.infinity,
-                      child: setupContent != null
-                          ? setupContent!
-                          : !connectionLanding
-                          ? actions(2)
-                          : ClipRect(
-                              child: Stack(
-                                alignment: Alignment.bottomCenter,
-                                children: [
-                                  for (var page = 1; page < 5; page++)
-                                    ExcludeFocus(
+                ),
+                const SizedBox(height: Grid.md),
+                ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 440),
+                  child: SizedBox(
+                    width: double.infinity,
+                    child: setupContent != null
+                        ? setupContent!
+                        : !connectionLanding
+                        ? actions(2)
+                        : ClipRect(
+                            child: Stack(
+                              alignment: Alignment.bottomCenter,
+                              children: [
+                                for (var page = 1; page < 5; page++)
+                                  ExcludeFocus(
+                                    excluding: page != selectedPage,
+                                    child: ExcludeSemantics(
                                       excluding: page != selectedPage,
-                                      child: ExcludeSemantics(
-                                        excluding: page != selectedPage,
-                                        child: IgnorePointer(
-                                          ignoring: page != selectedPage,
-                                          child: AnimatedSlide(
-                                            key: ValueKey(
-                                              'welcome-panel-$page',
-                                            ),
-                                            offset: Offset(
-                                              page == selectedPage
-                                                  ? 0
-                                                  : page == 1
-                                                  ? -1
-                                                  : 1,
-                                              0,
-                                            ),
-                                            duration: revealDuration,
-                                            curve: page == selectedPage
-                                                ? Curves.easeOutQuad
-                                                : Curves.easeOutCubic.flipped,
-                                            child: SizedBox(
-                                              width: double.infinity,
-                                              child: actions(page),
-                                            ),
+                                      child: IgnorePointer(
+                                        ignoring: page != selectedPage,
+                                        child: AnimatedSlide(
+                                          key: ValueKey('welcome-panel-$page'),
+                                          offset: Offset(
+                                            page == selectedPage
+                                                ? 0
+                                                : page == 1
+                                                ? -1
+                                                : 1,
+                                            0,
+                                          ),
+                                          duration: revealDuration,
+                                          curve: page == selectedPage
+                                              ? Curves.easeOutQuad
+                                              : Curves.easeOutCubic.flipped,
+                                          child: SizedBox(
+                                            width: double.infinity,
+                                            child: actions(page),
                                           ),
                                         ),
                                       ),
                                     ),
-                                ],
-                              ),
+                                  ),
+                              ],
                             ),
-                    ),
+                          ),
                   ),
-                ],
-              ),
+                ),
+              ],
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
     return PopScope(

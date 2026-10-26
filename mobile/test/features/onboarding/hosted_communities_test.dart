@@ -1,3 +1,5 @@
+import 'dart:ui' as ui;
+
 import 'package:buzz/shared/hosted/hosted_community_creation.dart';
 import 'package:buzz/shared/hosted/hosted_environment.dart';
 import 'package:buzz/features/onboarding/hosted_connect_page.dart';
@@ -10,6 +12,7 @@ import 'package:buzz/shared/hosted/builderlab_account.dart';
 import 'package:buzz/shared/hosted/hosted_community_connection.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter/semantics.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -46,7 +49,7 @@ void main() {
           ),
         );
         await tester.pumpAndSettle();
-        await revealOptions(tester);
+        await revealOptionsWithSemantics(tester);
         await tester.pumpAndSettle();
         tester.view.physicalSize = const Size(420, 900);
         await tester.pumpAndSettle();
@@ -320,5 +323,33 @@ Future<void> revealOptions(WidgetTester tester) async {
     await first.up(timeStamp: Duration(milliseconds: tap * 70 + 20));
     await second.up(timeStamp: Duration(milliseconds: tap * 70 + 20));
     await tester.pump(const Duration(milliseconds: 50));
+  }
+}
+
+Future<void> revealOptionsWithSemantics(WidgetTester tester) async {
+  final handle = tester.ensureSemantics();
+  try {
+    await tester.pump();
+    final wordmark = tester.getSemantics(find.bySemanticsLabel('Buzz'));
+    final data = wordmark.getSemanticsData();
+    final actionIds = data.customSemanticsActionIds!;
+    expect(actionIds, hasLength(1));
+    expect(
+      CustomSemanticsAction.getAction(actionIds.single)!.label,
+      'More connection options',
+    );
+    // The action belongs to the wordmark, never an unlabelled page-sized stop.
+    expect(data.label, 'Buzz');
+    expect(wordmark.rect.height, lessThan(200));
+    wordmark.owner!.performAction(
+      wordmark.id,
+      ui.SemanticsAction.customAction,
+      actionIds.single,
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('Enter a community link').hitTestable(), findsOneWidget);
+    expect(find.text('Use a pairing code').hitTestable(), findsOneWidget);
+  } finally {
+    handle.dispose();
   }
 }
