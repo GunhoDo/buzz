@@ -791,14 +791,7 @@ pub async fn put_members(
     targets: &[MemberPut<'_>],
     invited_by: Option<&[u8]>,
 ) -> Result<Vec<Result<PutMemberResult>>> {
-    let mut seen = std::collections::HashSet::with_capacity(targets.len());
-    if let Some(dup) = targets.iter().find(|t| !seen.insert(t.pubkey)) {
-        return Err(DbError::InvalidData(format!(
-            "pubkey {} appears more than once",
-            hex::encode(dup.pubkey)
-        )));
-    }
-
+    check_distinct_targets(targets)?;
     let mut tx = crate::begin_community_write_transaction(
         pool,
         community_id,
@@ -809,7 +802,100 @@ pub async fn put_members(
     // First statement: serialize the whole decision / owner-count / upsert
     // sequence against concurrent membership writes on this channel.
     acquire_channel_membership_lock(tx.conn(), community_id, channel_id).await?;
+    let results = put_members_on(&mut tx, channel_id, targets, invited_by).await?;
+    tx.commit().await?;
+    Ok(results)
+}
 
+/// The result of [`Db::put_members_with_event`].
+pub enum MemberPutEventWrite {
+    /// The event was stored and at least one person was written. One result
+    /// per target, in order, as from [`put_members`].
+    Applied {
+        /// The stored kind:9000 event.
+        stored: buzz_core::StoredEvent,
+        /// One result per target.
+        results: Vec<Result<PutMemberResult>>,
+    },
+    /// The event was already stored. Nothing changed: its membership changes
+    /// committed with it the first time.
+    Duplicate(buzz_core::StoredEvent),
+    /// Every person was refused, so nothing was stored. One error per target.
+    Refused(Vec<DbError>),
+}
+
+/// Store a kind:9000 `event` and apply its [`put_members`] writes in one
+/// transaction. If any write fails, nothing is stored, so the client can
+/// resend the same event and have it applied.
+///
+/// The membership lock comes first, as in [`put_members`] and the channel
+/// settings writers, so a second copy of the event waits for the first and
+/// then finds it stored.
+pub(crate) async fn put_members_with_event(
+    pool: &PgPool,
+    push_enqueue: Option<crate::runtime::push_enqueue::PushEnqueue>,
+    community_id: CommunityId,
+    channel_id: Uuid,
+    event: &nostr::Event,
+    targets: &[MemberPut<'_>],
+    thread_meta: Option<crate::event::ThreadMetadataParams<'_>>,
+) -> Result<MemberPutEventWrite> {
+    check_distinct_targets(targets)?;
+    let mut tx = crate::begin_community_event_write_transaction(
+        pool,
+        community_id,
+        crate::observability::WriterOperation::EventWrite,
+    )
+    .await?;
+    tx.set_push_enqueue(push_enqueue);
+    acquire_channel_membership_lock(tx.conn(), community_id, channel_id).await?;
+
+    // The same writes as `Db::insert_event_with_thread_metadata`.
+    let (stored, inserted) = crate::event::insert_event_with_thread_metadata_tx(
+        &mut tx,
+        event,
+        Some(channel_id),
+        thread_meta,
+    )
+    .await?;
+    if !inserted {
+        tx.rollback().await?;
+        return Ok(MemberPutEventWrite::Duplicate(stored));
+    }
+    crate::insert_mentions_in_transaction(&mut tx, event, Some(channel_id)).await?;
+
+    let actor = event.pubkey.to_bytes();
+    let results = put_members_on(&mut tx, channel_id, targets, Some(&actor)).await?;
+    if results.iter().all(Result::is_err) {
+        tx.rollback().await?;
+        return Ok(MemberPutEventWrite::Refused(
+            results.into_iter().filter_map(Result::err).collect(),
+        ));
+    }
+    tx.commit().await?;
+    Ok(MemberPutEventWrite::Applied { stored, results })
+}
+
+fn check_distinct_targets(targets: &[MemberPut<'_>]) -> Result<()> {
+    let mut seen = std::collections::HashSet::with_capacity(targets.len());
+    match targets.iter().find(|t| !seen.insert(t.pubkey)) {
+        Some(dup) => Err(DbError::InvalidData(format!(
+            "pubkey {} appears more than once",
+            hex::encode(dup.pubkey)
+        ))),
+        None => Ok(()),
+    }
+}
+
+/// The decisions and upsert of [`put_members`], on a transaction that holds
+/// `channel_id`'s membership lock. The caller owns the commit.
+async fn put_members_on(
+    tx: &mut AdmittedTx,
+    channel_id: Uuid,
+    targets: &[MemberPut<'_>],
+    invited_by: Option<&[u8]>,
+) -> Result<Vec<Result<PutMemberResult>>> {
+    let community_id = tx.community();
     let channel = get_channel_tx(tx.conn(), community_id, channel_id).await?;
     let private = channel.visibility == "private";
     let join_role = buzz_core::channel::ChannelJoinRole::parse_fail_closed(&channel.join_role);
@@ -945,7 +1031,6 @@ pub async fn put_members(
             written.insert(member.pubkey.clone(), member);
         }
     }
-    tx.commit().await?;
 
     Ok(targets
         .iter()
@@ -2115,17 +2200,28 @@ impl Db {
         .await
     }
 
-    /// [`Db::put_member`] for several people in one transaction (see
-    /// [`put_members`]).
-    #[datastore_span(name = "put_members", system = "postgresql")]
-    pub async fn put_members(
+    /// Stores a kind:9000 `event` and applies its [`put_members`] writes,
+    /// with the event's author as the actor, in one transaction (see
+    /// [`put_members_with_event`]).
+    #[datastore_span(name = "put_members_with_event", system = "postgresql")]
+    pub async fn put_members_with_event(
         &self,
         community_id: CommunityId,
         channel_id: Uuid,
+        event: &nostr::Event,
         targets: &[MemberPut<'_>],
-        invited_by: Option<&[u8]>,
-    ) -> Result<Vec<Result<PutMemberResult>>> {
-        put_members(&self.pool, community_id, channel_id, targets, invited_by).await
+        thread_meta: Option<crate::event::ThreadMetadataParams<'_>>,
+    ) -> Result<MemberPutEventWrite> {
+        put_members_with_event(
+            &self.pool,
+            self.push_enqueue.clone(),
+            community_id,
+            channel_id,
+            event,
+            targets,
+            thread_meta,
+        )
+        .await
     }
 
     /// Removes a member from a channel.
@@ -3474,6 +3570,112 @@ mod postgres_tests {
         .await
         .expect_err("duplicate pubkey");
         assert!(matches!(err, DbError::InvalidData(_)), "{err:?}");
+    }
+
+    /// `put_members_with_event` stores the event only with the writes it
+    /// carries: a stored event applies its people, a resend changes nothing,
+    /// and an event whose every person is refused under the lock is not
+    /// stored. Mutations: commit when everyone is refused → the refused event
+    /// is stored → RED; write people on a duplicate → the removed person is
+    /// back → RED.
+    #[tokio::test]
+    #[ignore = "requires Postgres"]
+    async fn put_members_with_event_stores_the_event_with_its_writes() {
+        let pool = setup_pool().await;
+        let community_id = make_test_community(&pool).await;
+        let community = CommunityId::from_uuid(community_id);
+        let (owner, outsider) = (Keys::generate(), Keys::generate());
+        let (owner_pk, outsider_pk) = (
+            owner.public_key().to_bytes().to_vec(),
+            outsider.public_key().to_bytes().to_vec(),
+        );
+        let person = random_pubkey();
+        for pk in [&owner_pk, &outsider_pk, &person] {
+            ensure_user(&pool, community, pk)
+                .await
+                .expect("ensure user");
+        }
+        let channel = create_test_channel(
+            &pool,
+            community_id,
+            "put-members-event",
+            ChannelType::Stream,
+            ChannelVisibility::Private,
+            None,
+            &owner_pk,
+            None,
+        )
+        .await
+        .expect("create channel");
+        let event = |actor: &Keys| {
+            nostr::EventBuilder::new(nostr::Kind::Custom(9000), "")
+                .tags([
+                    nostr::Tag::parse(["h", &channel.id.to_string()]).unwrap(),
+                    nostr::Tag::parse(["p", &hex::encode(&person)]).unwrap(),
+                ])
+                .sign_with_keys(actor)
+                .expect("sign 9000")
+        };
+        let targets = [MemberPut {
+            pubkey: &person,
+            requested: None,
+        }];
+        let stored = |id: nostr::EventId| {
+            let pool = pool.clone();
+            async move {
+                crate::event::get_event_by_id(&pool, community, id.as_bytes())
+                    .await
+                    .expect("read event")
+                    .is_some()
+            }
+        };
+
+        // A non-member may not add anyone to a private channel.
+        let refused = event(&outsider);
+        let write =
+            put_members_with_event(&pool, None, community, channel.id, &refused, &targets, None)
+                .await
+                .expect("refused write");
+        assert!(
+            matches!(&write, MemberPutEventWrite::Refused(errors)
+                if matches!(errors.as_slice(), [DbError::AccessDenied(_)])),
+            "expected a refusal"
+        );
+        assert!(!stored(refused.id).await, "a refused event is not stored");
+        assert_eq!(
+            get_member_role(&pool, community, channel.id, &person)
+                .await
+                .expect("read role"),
+            None
+        );
+
+        let added = event(&owner);
+        let write =
+            put_members_with_event(&pool, None, community, channel.id, &added, &targets, None)
+                .await
+                .expect("applied write");
+        let MemberPutEventWrite::Applied { results, .. } = write else {
+            panic!("expected the event to apply");
+        };
+        let put = results[0].as_ref().expect("person added");
+        assert_eq!(put.prior_role, None);
+        assert!(stored(added.id).await);
+
+        // A resend finds the event stored and leaves the roster alone.
+        remove_member(&pool, community, channel.id, &person, &owner_pk)
+            .await
+            .expect("remove person");
+        let write =
+            put_members_with_event(&pool, None, community, channel.id, &added, &targets, None)
+                .await
+                .expect("duplicate write");
+        assert!(matches!(write, MemberPutEventWrite::Duplicate(_)));
+        assert_eq!(
+            get_member_role(&pool, community, channel.id, &person)
+                .await
+                .expect("read role"),
+            None
+        );
     }
 
     /// `put_member` enforces admission itself, so a caller that skips the
