@@ -632,8 +632,13 @@ private final class NativeProfileTextEditorViewController:
       cell.accessoryView = button
     } else if isChatEditor && indexPath.section == 2 {
       var content = cell.defaultContentConfiguration()
-      let selected = assistants.first { $0["id"] == selectedAssistant }
+      let saved = chatOptions?["savedAssistant"] as? [String: String]
+      let fallback = fieldsLocked ? selectedAssistant.map {
+        saved.flatMap { $0["id"] == selectedAssistant ? $0 : nil } ?? ["id": $0, "name": $0]
+      } : nil
+      let selected = assistants.first { $0["id"] == selectedAssistant } ?? fallback
       content.text = selected?["name"] ?? "Choose an agent"
+      content.textProperties.numberOfLines = 0
       if let selected {
         content.image = selectedAssistantAvatar ?? MeAssistantListController.avatarImage(selected, photo: nil)
       }

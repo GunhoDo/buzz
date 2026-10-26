@@ -76,6 +76,19 @@ Future<(Channel, String)?> _showNewMeChat(
                   .toARGB32(),
               'containerCornerRadius': Radii.container,
               'selectedAssistant': assistant,
+              if (retry && assistant != null)
+                'savedAssistant': {
+                  'id': assistant,
+                  'name':
+                      ref.read(userCacheProvider)[assistant]?.label ??
+                      directory
+                          ?.where((a) => a.pubkey == assistant)
+                          .firstOrNull
+                          ?.displayName ??
+                      assistant,
+                  'avatarUrl':
+                      ref.read(userCacheProvider)[assistant]?.avatarUrl ?? '',
+                },
               'selectedProject': project,
               'projects': [
                 for (final group

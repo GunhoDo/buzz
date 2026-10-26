@@ -157,6 +157,7 @@ void main() {
         final draft = Completer<Map<String, String>>();
         String? presentationId;
         Map<Object?, Object?>? agentUpdate;
+        Object? savedAssistant;
         var forms = 0;
         tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(bridge, (
           call,
@@ -166,7 +167,9 @@ void main() {
             return null;
           }
           if (++forms > 1) return null;
-          presentationId = (call.arguments as Map)['presentationId'] as String;
+          final arguments = call.arguments as Map;
+          presentationId = arguments['presentationId'] as String;
+          savedAssistant = arguments['savedAssistant'];
           return draft.future;
         });
         addTearDown(
@@ -216,6 +219,13 @@ void main() {
           await tester.pumpAndSettle();
         }
         expect(forms, 1, reason: 'Compose opens even while agents are loading');
+        if (recoverExisting) {
+          expect(savedAssistant, {
+            'id': agent.public,
+            'name': agent.public,
+            'avatarUrl': '',
+          });
+        }
         directory.complete([
           AgentDirectoryEntry(pubkey: agent.public, displayName: 'Owned agent'),
         ]);

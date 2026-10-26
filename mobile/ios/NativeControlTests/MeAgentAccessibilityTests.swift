@@ -6,6 +6,7 @@ struct MeAgentAccessibilityTests {
   @MainActor static func main() {
     for locked in [false, true] {
       for empty in [false, true] {
+        let savedName = "Saved agent"
         var submitted: [String: String]?
         let controller = NativeProfileTextEditorViewController(
           title: "New chat", initialValue: "Chat", placeholder: "Chat name",
@@ -15,7 +16,7 @@ struct MeAgentAccessibilityTests {
           channelDescription: nil, originalName: nil, originalDescription: nil,
           canEditDetails: true, canEditCanvas: false, canvasContent: "",
           canvasLoaded: false,
-          chatOptions: ["selectedAssistant": "agent", "presentationId": "test", "assistantsLoading": empty, "fieldsLocked": locked, "assistants": empty ? [] : [["id": "agent", "name": "Agent"]]],
+          chatOptions: ["selectedAssistant": "agent", "savedAssistant": ["id": "agent", "name": savedName], "presentationId": "test", "assistantsLoading": empty, "fieldsLocked": locked, "assistants": empty ? [] : [["id": "agent", "name": "Agent"]]],
           onCancel: {}, onSet: { submitted = $0 as? [String: String] }
         )
         controller.loadViewIfNeeded()
@@ -28,6 +29,9 @@ struct MeAgentAccessibilityTests {
         precondition(project.isEnabled == !locked)
         precondition(project.showsMenuAsPrimaryAction && project.menu != nil)
         let cell = controller.tableView(controller.tableView, cellForRowAt: IndexPath(row: 0, section: 2))
+        let content = cell.contentConfiguration as! UIListContentConfiguration
+        precondition(content.text == (empty ? (locked ? savedName : "Choose an agent") : "Agent"))
+        precondition((content.image != nil) == (locked || !empty))
         let disabled = locked || empty
         precondition(cell.accessibilityTraits.contains(.notEnabled) == disabled)
         precondition(cell.accessibilityTraits.contains(.button) == !disabled)
@@ -58,6 +62,9 @@ struct MeAgentAccessibilityTests {
           "presentationId": "test",
           "assistants": empty ? [] : [["id": "agent", "name": "Agent"]],
         ])
+        let refreshedCell = controller.tableView(controller.tableView, cellForRowAt: IndexPath(row: 0, section: 2))
+        let refreshed = refreshedCell.contentConfiguration as! UIListContentConfiguration
+        precondition(refreshed.text == (empty ? (locked ? savedName : "Choose an agent") : "Agent"))
         precondition(controller.navigationItem.rightBarButtonItem?.isEnabled == canSubmit)
         _ = controller.perform(NSSelectorFromString("setTapped"))
         precondition(submitted?["assistant"] == (canSubmit ? "agent" : nil))

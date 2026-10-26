@@ -50,7 +50,7 @@ class MeChatCreation {
             previous.project != project)) {
       throw StateError('Resume the pending chat before starting another.');
     }
-    if (previous != null) return;
+    // A matching cached value does not prove a previous disk write succeeded.
     if (sync.prefs == null ||
         !await sync.prefs!.setString(
           storageKey(sync),
