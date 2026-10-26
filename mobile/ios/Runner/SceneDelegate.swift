@@ -22,7 +22,7 @@ class BuzzFlutterViewController: FlutterViewController {
     guard scannerHidesStatusBar != hidden else { return }
     scannerHidesStatusBar = hidden
     UIView.animate(
-      withDuration: UIAccessibility.isReduceMotionEnabled ? 0 : 0.3,
+      withDuration: UIAccessibility.isReduceMotionEnabled ? 0 : 0.28,
       delay: 0,
       options: [.beginFromCurrentState, .curveEaseInOut]
     ) {
