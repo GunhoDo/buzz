@@ -50,11 +50,11 @@ const CHANNEL_MEMBERSHIP_LOCK_NAMESPACE: &str = "buzz_channel_membership:";
 /// Verify that migration 0032's roster fence is active on the partitioned
 /// `events` parent and every attached partition.
 ///
-/// New roster publishers depend on this database-side guard to serialize with
-/// legacy publishers during a rolling deployment. If the migration has not
-/// been applied, publishing with the new lock protocol would falsely appear
-/// safe while an old pod could still overwrite it with stale membership.
-pub async fn verify_channel_roster_fence_catalog<'e>(
+/// Only tests use this. The relay no longer requires the trigger at startup or
+/// after migrating: [`validate_channel_roster_snapshot`] enforces the same rule
+/// in every roster writer, so the trigger can be dropped.
+#[cfg(test)]
+pub(crate) async fn verify_channel_roster_fence_catalog<'e>(
     executor: impl sqlx::PgExecutor<'e>,
 ) -> Result<()> {
     // tgtype bits: 1 = ROW, 2 = BEFORE, 4 = INSERT, 16 = UPDATE, 64 = INSTEAD.
@@ -91,87 +91,6 @@ pub async fn verify_channel_roster_fence_catalog<'e>(
             missing.join(", ")
         )));
     }
-    Ok(())
-}
-
-/// Prove migration 0032's roster fence semantics through the live writer pool.
-///
-/// The catalog check cannot detect a no-op or otherwise corrupted trigger
-/// function. This rolled-back probe verifies that a canonical empty roster is
-/// accepted while a stale roster member is rejected with `check_violation`.
-pub async fn verify_channel_roster_fence_behavior(pool: &sqlx::PgPool) -> Result<()> {
-    let connection = crate::observability::acquire_writer(
-        pool,
-        crate::observability::WriterOperation::Bootstrap,
-    )
-    .await?;
-    let mut tx = sqlx::Transaction::begin(connection, None).await?;
-    let community_id = Uuid::new_v4();
-    let channel_id = Uuid::new_v4();
-    sqlx::query("INSERT INTO communities (id, host) VALUES ($1, $2)")
-        .bind(community_id)
-        .bind(format!(
-            "roster-fence-verify-{}.invalid",
-            community_id.simple()
-        ))
-        .execute(&mut *tx)
-        .await?;
-
-    let insert = |id: Vec<u8>, tags: serde_json::Value| {
-        sqlx::query(
-            "INSERT INTO events (community_id, id, pubkey, created_at, kind, tags, content, sig, received_at, channel_id, d_tag) \
-             VALUES ($1, $2, $3, NOW(), 39002, $4, '', $5, NOW(), $6, $7)",
-        )
-        .bind(community_id)
-        .bind(id)
-        .bind(vec![0u8; 32])
-        .bind(tags)
-        .bind(vec![0u8; 64])
-        .bind(channel_id)
-        .bind(channel_id.to_string())
-    };
-
-    insert(
-        vec![0u8; 32],
-        serde_json::json!([["d", channel_id.to_string()]]),
-    )
-    .execute(&mut *tx)
-    .await
-    .map_err(|error| {
-        DbError::InvalidData(format!(
-            "channel roster fence rejected a canonical probe roster: {error}"
-        ))
-    })?;
-
-    sqlx::query("SAVEPOINT roster_fence_probe")
-        .execute(&mut *tx)
-        .await?;
-    let stale = insert(
-        vec![1u8; 32],
-        serde_json::json!([
-            ["d", channel_id.to_string()],
-            ["p", hex::encode([2u8; 32]), "", "member"]
-        ]),
-    )
-    .execute(&mut *tx)
-    .await;
-    match stale {
-        Err(sqlx::Error::Database(error)) if error.code().as_deref() == Some("23514") => {}
-        Ok(_) => {
-            return Err(DbError::InvalidData(
-                "channel roster fence is inert: a stale probe roster was accepted".into(),
-            ));
-        }
-        Err(error) => {
-            return Err(DbError::InvalidData(format!(
-                "channel roster fence probe failed unexpectedly: {error}"
-            )));
-        }
-    }
-    sqlx::query("ROLLBACK TO SAVEPOINT roster_fence_probe")
-        .execute(&mut *tx)
-        .await?;
-    tx.rollback().await?;
     Ok(())
 }
 
@@ -2047,20 +1966,6 @@ pub async fn get_member_role(
 }
 
 impl Db {
-    /// Verify the mixed-version channel-roster database fence end to end.
-    #[datastore_span(name = "verify_channel_roster_fence", system = "postgresql")]
-    pub async fn verify_channel_roster_fence(&self) -> Result<()> {
-        {
-            let mut connection = crate::observability::acquire_writer(
-                &self.pool,
-                crate::observability::WriterOperation::Bootstrap,
-            )
-            .await?;
-            verify_channel_roster_fence_catalog(&mut *connection).await?;
-        }
-        verify_channel_roster_fence_behavior(&self.pool).await
-    }
-
     /// Capture the active roster while holding the membership-writer lock.
     #[datastore_span(name = "lock_member_snapshot", system = "postgresql")]
     pub async fn lock_member_snapshot(
@@ -5073,140 +4978,31 @@ mod postgres_tests {
         .expect("create channel");
     }
 
+    /// The relay must run without the 0032 roster trigger: the app-side check
+    /// in every roster writer is the fence, and a later migration drops the
+    /// trigger. Migrating a database that has no trigger must succeed.
+    ///
+    /// Mutation: restore the catalog check after `MIGRATOR.run` in
+    /// `run_migrations_locked` → migrating fails → RED.
     #[tokio::test]
     #[ignore = "requires Postgres"]
-    async fn unmigrated_roster_fence_blocks_startup_until_0032_is_applied() {
+    async fn migrations_run_without_the_roster_trigger() {
         let admin = PgPool::connect(&admin_url().await)
             .await
             .expect("connect admin");
-        let (pool, scratch_name) =
-            create_scratch_db_through(&admin, "roster_fence_unmigrated", Some(31)).await;
-        let db = Db::from_pool(pool.clone());
-
-        let error = db
-            .verify_channel_roster_fence()
-            .await
-            .expect_err("pre-0032 schema must block roster publishers");
-        assert!(
-            error.to_string().contains("channel roster fence trigger"),
-            "startup gate must report the missing schema fence: {error}"
-        );
-        let rows_before: i64 = sqlx::query_scalar("SELECT count(*) FROM events WHERE kind = 39002")
-            .fetch_one(&pool)
-            .await
-            .expect("count pre-migration rosters");
-        assert_eq!(
-            rows_before, 0,
-            "failed startup gate must not publish a roster"
-        );
+        let (pool, scratch_name) = create_scratch_db(&admin, "roster_fence_absent").await;
+        sqlx::raw_sql(
+            "DROP TRIGGER trg_events_guard_channel_roster_snapshot ON events; \
+             DROP FUNCTION guard_channel_roster_snapshot();",
+        )
+        .execute(&pool)
+        .await
+        .expect("drop the roster trigger");
+        assert!(verify_channel_roster_fence_catalog(&pool).await.is_err());
 
         migration::run_migrations(&pool)
             .await
-            .expect("apply migration 0032");
-        db.verify_channel_roster_fence()
-            .await
-            .expect("0032 must open the startup gate");
-
-        drop_scratch_db(&admin, pool, &scratch_name).await;
-    }
-
-    #[tokio::test]
-    #[ignore = "requires Postgres"]
-    async fn channel_roster_fence_behavior_verification_detects_inert_function() {
-        let admin = PgPool::connect(&admin_url().await)
-            .await
-            .expect("connect admin");
-        let (pool, scratch_name) = create_scratch_db(&admin, "roster_fence_inert").await;
-        let db = Db::from_pool(pool.clone());
-
-        sqlx::raw_sql(
-            "CREATE OR REPLACE FUNCTION guard_channel_roster_snapshot() \
-             RETURNS TRIGGER AS $$ BEGIN RETURN NEW; END; $$ LANGUAGE plpgsql;",
-        )
-        .execute(&pool)
-        .await
-        .expect("replace roster fence with inert body");
-        let error = db
-            .verify_channel_roster_fence()
-            .await
-            .expect_err("inert roster fence must fail closed");
-        assert!(
-            error
-                .to_string()
-                .contains("stale probe roster was accepted"),
-            "behavior probe must identify inert semantics: {error}"
-        );
-
-        drop_scratch_db(&admin, pool, &scratch_name).await;
-    }
-
-    #[tokio::test]
-    #[ignore = "requires Postgres"]
-    async fn channel_roster_fence_catalog_verification_fails_closed() {
-        let admin = PgPool::connect(&admin_url().await)
-            .await
-            .expect("connect admin");
-        let (pool, scratch_name) = create_scratch_db(&admin, "roster_fence_catalog").await;
-        let db = Db::from_pool(pool.clone());
-
-        db.verify_channel_roster_fence()
-            .await
-            .expect("migrated roster fence must verify");
-
-        let child: String = sqlx::query_scalar(
-            "SELECT n.nspname || '.' || c.relname \
-             FROM pg_inherits i JOIN pg_class c ON c.oid = i.inhrelid \
-             JOIN pg_namespace n ON n.oid = c.relnamespace \
-             WHERE i.inhparent = 'public.events'::regclass ORDER BY i.inhrelid LIMIT 1",
-        )
-        .fetch_one(&pool)
-        .await
-        .expect("load event partition");
-        sqlx::query(sqlx::AssertSqlSafe(format!(
-            "ALTER TABLE {child} DISABLE TRIGGER trg_events_guard_channel_roster_snapshot"
-        )))
-        .execute(&pool)
-        .await
-        .expect("disable partition roster trigger");
-        let error = db
-            .verify_channel_roster_fence()
-            .await
-            .expect_err("disabled partition roster fence must fail closed");
-        assert!(
-            error.to_string().contains(&child),
-            "verification must identify the unfenced partition: {error}"
-        );
-
-        drop_scratch_db(&admin, pool, &scratch_name).await;
-    }
-
-    #[tokio::test]
-    #[ignore = "requires Postgres"]
-    async fn channel_roster_fence_verification_supports_size_one_pool() {
-        let admin = PgPool::connect(&admin_url().await)
-            .await
-            .expect("connect admin");
-        let (seed_pool, scratch_name) = create_scratch_db(&admin, "roster_fence_size_one").await;
-        seed_pool.close().await;
-
-        let base_url = admin_url().await;
-        let path = base_url.rfind('/').expect("database URL path");
-        let scratch_url = format!("{}/{}", &base_url[..path], scratch_name);
-        let pool = PgPoolOptions::new()
-            .max_connections(1)
-            .acquire_timeout(std::time::Duration::from_secs(1))
-            .connect(&scratch_url)
-            .await
-            .expect("connect size-one writer pool");
-        let db = Db::from_pool(pool.clone());
-
-        tokio::time::timeout(
-            std::time::Duration::from_secs(2),
-            db.verify_channel_roster_fence(),
-        )
-        .await
-        .expect("roster verification must not self-deadlock on its second checkout")
-        .expect("migrated roster fence verifies on a size-one pool");
+            .expect("migrating must not require the roster trigger");
 
         drop_scratch_db(&admin, pool, &scratch_name).await;
     }
