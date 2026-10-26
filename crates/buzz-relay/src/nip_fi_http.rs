@@ -64,8 +64,7 @@ use std::fmt;
 use crate::access::{AccessSlot, AuthMethod, AuthResult};
 use crate::nip_fi_core::ResolvedCommunity;
 use crate::nip_fi_core::{
-    asserted_key_matches, assertion_denied, evaluate_attached_assertion, http_denial,
-    Communities,
+    asserted_key_matches, assertion_denied, evaluate_attached_assertion, http_denial, Communities,
 };
 use buzz_auth::CommunityBinding;
 
