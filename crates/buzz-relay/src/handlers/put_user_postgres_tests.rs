@@ -670,3 +670,80 @@ async fn failed_put_user_stores_nothing() {
         1
     );
 }
+
+/// A refusal decided under the membership lock, after validation passed,
+/// rejects the event with `invalid:` and stores nothing, for a single add and
+/// for a batch. A trigger removes the actor inside the write transaction, so
+/// validation sees an owner and the locked decision sees a non-member of a
+/// private channel.
+/// Mutations: map the under-lock `AccessDenied` to `error:` → RED; commit the
+/// refused event → RED.
+#[tokio::test]
+#[ignore = "requires Postgres"]
+async fn put_user_refused_under_the_lock_stores_nothing() {
+    let state = state().await;
+    let tenant = community(&state, "put-user-locked-refusal").await;
+    let (owner, first, second) = (Keys::generate(), Keys::generate(), Keys::generate());
+    let channel_id = create_channel(&state, &tenant, &owner, &[&["visibility", "private"]]).await;
+    let (first_hex, second_hex) = (first.public_key().to_hex(), second.public_key().to_hex());
+
+    // Each test runs in its own database, so this trigger affects only it. The
+    // removal rolls back with the refused transaction.
+    for statement in [
+        "CREATE FUNCTION put_user_revoke_actor() RETURNS trigger LANGUAGE plpgsql AS \
+         $$ BEGIN UPDATE channel_members SET removed_at = NOW() \
+         WHERE community_id = NEW.community_id AND channel_id = NEW.channel_id \
+         AND pubkey = NEW.pubkey AND removed_at IS NULL; RETURN NULL; END $$",
+        "CREATE TRIGGER put_user_revoke_actor AFTER INSERT ON events \
+         FOR EACH ROW WHEN (NEW.kind = 9000) EXECUTE FUNCTION put_user_revoke_actor()",
+    ] {
+        sqlx::query(statement)
+            .execute(state.db.pool())
+            .await
+            .expect("install revoke trigger");
+    }
+
+    let reason = "private channel requires an invite from an active member";
+    let single = put_user(&owner, channel_id, &[&[&first_hex]], &[]);
+    let batch = put_user(&owner, channel_id, &[&[&first_hex], &[&second_hex]], &[]);
+    for event in [single, batch.clone()] {
+        let message = match ingest(&state, &tenant, event, &owner).await {
+            Err(IngestError::Rejected(message)) => message,
+            Err(error) => panic!("expected an invalid: rejection, got {error:?}"),
+            Ok(result) => panic!("expected a rejection, got OK {}", result.message),
+        };
+        let body = message.strip_prefix("invalid: ").expect("invalid prefix");
+        if body.starts_with("members: ") {
+            assert_eq!(
+                report(body),
+                serde_json::json!({
+                    "rejected": [{ "reason": reason, "pubkeys": [first_hex, second_hex] }],
+                })
+            );
+        } else {
+            assert_eq!(body, reason);
+        }
+        assert_eq!(put_user_events(&state, &tenant, channel_id).await, 0);
+        for keys in [&first, &second] {
+            assert_eq!(role_of(&state, &tenant, channel_id, keys).await, None);
+            assert_eq!(joined_notices(&state, &tenant, channel_id, keys).await, 0);
+        }
+        assert_eq!(
+            role_of(&state, &tenant, channel_id, &owner)
+                .await
+                .as_deref(),
+            Some("owner"),
+            "the actor's removal rolls back with the refusal"
+        );
+    }
+
+    // Nothing was stored, so the same signed event applies once the actor
+    // keeps their role.
+    sqlx::query("DROP TRIGGER put_user_revoke_actor ON events")
+        .execute(state.db.pool())
+        .await
+        .expect("drop revoke trigger");
+    let retry = ingest(&state, &tenant, batch, &owner).await.expect("retry");
+    assert!(retry.accepted, "{}", retry.message);
+    assert_eq!(put_user_events(&state, &tenant, channel_id).await, 1);
+}
