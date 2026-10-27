@@ -545,10 +545,8 @@ fn http_trace_layer() -> TraceLayer<HttpMakeClassifier, fn(&Request<Body>) -> tr
     TraceLayer::new_for_http().make_span_with(make_http_span as fn(&Request<Body>) -> tracing::Span)
 }
 
-/// ERROR level, so the span is on whenever an access line is: those lines
-/// take the request method from its `http.request.method`.
 fn make_http_span(request: &Request<Body>) -> tracing::Span {
-    tracing::error_span!(
+    tracing::info_span!(
         target: "buzz_relay",
         "http.request",
         otel.kind = "server",

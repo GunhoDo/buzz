@@ -15,8 +15,7 @@
 //! matched template, never the raw path.
 //! A successful bridge read that returned nothing (`result_count=0`) logs at
 //! DEBUG: polling clients make most of them. WebSocket `req` lines stay at
-//! INFO, because an empty subscription can still deliver live events. The
-//! request method is the enclosing span's `http.request.method`.
+//! INFO, because an empty subscription can still deliver live events.
 //!
 //! With `BUZZ_CLIENT_IP_HEADER` set, `http`, `auth` and `close` lines also
 //! carry `client_ip`: the rightmost entry of that request header, only when it
@@ -1087,6 +1086,7 @@ impl AccessSlot {
         drop(HttpLine {
             slot: self.clone(),
             route: Some(route.to_owned()),
+            http_method: axum::http::Method::POST,
             peer_addr: None,
             client_ip: None,
             started: std::time::Instant::now(),
@@ -1101,6 +1101,7 @@ impl AccessSlot {
         drop(HttpLine {
             slot: self.clone(),
             route: Some(route.to_owned()),
+            http_method: axum::http::Method::GET,
             peer_addr: None,
             client_ip: None,
             started: std::time::Instant::now(),
@@ -1140,6 +1141,7 @@ pub(crate) async fn http_access_log(
     let mut line = HttpLine {
         slot,
         route,
+        http_method: req.method().clone(),
         peer_addr: req
             .extensions()
             .get::<axum::extract::ConnectInfo<SocketAddr>>()
@@ -1165,6 +1167,7 @@ struct HttpLine {
     slot: AccessSlot,
     /// The matched template; `None` for a request that matched no route.
     route: Option<String>,
+    http_method: axum::http::Method,
     peer_addr: Option<SocketAddr>,
     client_ip: Option<IpAddr>,
     started: std::time::Instant,
@@ -1211,6 +1214,7 @@ impl Drop for HttpLine {
             level,
             event = HTTP_EVENT,
             route = self.route.as_deref().unwrap_or(UNMATCHED_ROUTE),
+            http_method = %self.http_method,
             peer_addr = self.peer_addr.map(tracing::field::display),
             client_ip = self.client_ip.map(tracing::field::display),
             method = note.method.map(AuthMethod::as_str),
@@ -1327,6 +1331,17 @@ pub(crate) mod tests {
     pub(crate) fn capture_scoped() -> (tracing::subscriber::DefaultGuard, Captured) {
         let out = Captured::default();
         (tracing::subscriber::set_default(json_subscriber(&out)), out)
+    }
+
+    /// Like [`capture_scoped`], with only the access target on, at `level`:
+    /// the HTTP span (target `buzz_relay`) is filtered out.
+    pub(crate) fn capture_access_only(
+        level: Level,
+    ) -> (tracing::subscriber::DefaultGuard, Captured) {
+        let out = Captured::default();
+        let subscriber = json_subscriber(&out)
+            .with(tracing_subscriber::filter::Targets::new().with_target(TARGET, level));
+        (tracing::subscriber::set_default(subscriber), out)
     }
 
     /// A replay guard whose check never finishes, so a request parks in its
