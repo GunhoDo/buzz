@@ -55,7 +55,8 @@ Future<List<AgentDirectoryEntry>> _loadAssistants(
   RelaySessionNotifier session, {
   String? pubkey,
 }) async {
-  final candidates = await _managedAgentPubkeys(sync, session, agent: pubkey);
+  final names = await _managedAgentNames(sync, session, agent: pubkey);
+  final candidates = names.keys.toList();
   final profiles = <String, NostrEvent>{};
   for (var offset = 0; offset < candidates.length; offset += _pageSize) {
     final batch = candidates.sublist(
@@ -84,7 +85,18 @@ Future<List<AgentDirectoryEntry>> _loadAssistants(
   for (final event in profiles.values) {
     try {
       if (verifiedProfileOaOwnerPubkey(event) == sync.pubkey) {
-        agents.add(AgentDirectoryEntry.fromEvent(event));
+        // The owner's inventory name is authoritative on Solo surfaces; the
+        // agent's self-authored profile cannot rename itself there.
+        final entry = AgentDirectoryEntry.fromEvent(event);
+        agents.add(
+          AgentDirectoryEntry(
+            pubkey: entry.pubkey,
+            displayName: names[entry.pubkey],
+            respondTo: entry.respondTo,
+            respondToAllowlist: entry.respondToAllowlist,
+            channelIds: entry.channelIds,
+          ),
+        );
       }
     } catch (_) {
       // A malformed profile must not hide unrelated verified agents.
@@ -94,12 +106,12 @@ Future<List<AgentDirectoryEntry>> _loadAssistants(
   return agents;
 }
 
-/// Candidate agents from the owner's own managed-agent records, as desktop
-/// discovers them. The records are discovery hints only: each candidate's
+/// Candidate agents and their owner-assigned names from the owner's own
+/// managed-agent records, as desktop discovers them. The records are discovery hints only: each candidate's
 /// profile must still carry a valid NIP-OA attestation by the owner. With
 /// [agent], only that agent's record is read, so an agent removed from the
 /// inventory also fails revalidation before chat creation and send.
-Future<List<String>> _managedAgentPubkeys(
+Future<Map<String, String>> _managedAgentNames(
   MeSync sync,
   RelaySessionNotifier session, {
   String? agent,
@@ -161,34 +173,35 @@ Future<List<String>> _managedAgentPubkeys(
     }
     cursor = last;
   }
-  return [
+  return {
     for (final MapEntry(key: d, value: event) in heads.entries)
-      if (_agentPubkey.hasMatch(d) && _isSupportedPolicy(event)) d,
-  ];
+      if (_agentPubkey.hasMatch(d)) d: ?_supportedPolicyName(event),
+  };
 }
 
 bool _newer(NostrEvent a, NostrEvent b) =>
     a.createdAt > b.createdAt ||
     (a.createdAt == b.createdAt && a.id.compareTo(b.id) < 0);
 
-/// Whether a managed-agent record holds a policy desktop can apply. This
+/// The owner-assigned name of a managed-agent record whose policy desktop can
+/// apply, or null. This
 /// mirrors desktop's `ManagedAgentEventContent` parse, plus the non-empty name
 /// desktop's agent library requires. An unsupported latest record fails
 /// closed: it excludes the agent rather than falling back to an older one.
-bool _isSupportedPolicy(NostrEvent event) {
+String? _supportedPolicyName(NostrEvent event) {
   final Object? decoded;
   try {
     decoded = jsonDecode(event.content);
   } on FormatException {
-    return false;
+    return null;
   }
-  if (decoded is! Map<String, dynamic>) return false;
+  if (decoded is! Map<String, dynamic>) return null;
   final body = decoded;
   final name = body['name'];
+  if (name is! String || name.trim().isEmpty) return null;
   final parallelism = body['parallelism'];
   final allowlist = body['respond_to_allowlist'];
-  return name is String &&
-      name.trim().isNotEmpty &&
+  final supported =
       parallelism is int &&
       parallelism >= 0 &&
       parallelism <= 0xFFFFFFFF &&
@@ -199,6 +212,7 @@ bool _isSupportedPolicy(NostrEvent event) {
         final value = body[field];
         return value == null || value is String;
       });
+  return supported ? name.trim() : null;
 }
 
 const _respondTo = {'owner-only', 'allowlist', 'anyone'};

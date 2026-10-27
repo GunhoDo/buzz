@@ -157,7 +157,7 @@ void main() {
     );
     final choices = await setup(relay).read(meAssistantsProvider.future);
     expect(choices.map((a) => a.pubkey), [agent.public]);
-    expect(choices.single.displayName, 'My assistant');
+    expect(choices.single.displayName, 'Agent');
     expect(relay.inventoryFilters.single, {
       'kinds': [30177],
       'authors': [owner.public],
@@ -168,6 +168,24 @@ void main() {
       unorderedEquals([agent.public, otherOwned.public, other.public]),
     );
     expect(relay.profileFilters.single['limit'], 3);
+  });
+  test('the owner inventory name outranks the agent profile name', () async {
+    final relay = _Relay(
+      inventory: [
+        [
+          managed(agent.public, content: {...policy, 'name': ' Owner Name '}),
+        ],
+      ],
+      profiles: [
+        profile(
+          agent,
+          ownedBy: owner,
+          content: {'display_name': 'Confusable Name', 'name': 'Other'},
+        ),
+      ],
+    );
+    final choices = await setup(relay).read(meAssistantsProvider.future);
+    expect(choices.single.displayName, 'Owner Name');
   });
   test('does not query profiles without managed agents', () async {
     final relay = _Relay(profiles: [profile(agent, ownedBy: owner)]);
@@ -206,7 +224,7 @@ void main() {
         final choices = await container.read(meAssistantsProvider.future);
         expect(
           choices.singleWhere((a) => a.pubkey == agent.public).displayName,
-          'My assistant',
+          'Agent',
         );
         expect(
           await isOwnedMeAssistant(
