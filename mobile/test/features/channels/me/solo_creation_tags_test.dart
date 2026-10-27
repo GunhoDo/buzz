@@ -11,6 +11,10 @@ import 'package:buzz/shared/mentions/agent_identity_provider.dart';
 import 'package:buzz/shared/me/me_groups.dart';
 import 'package:buzz/shared/me/me_sync.dart';
 import 'package:buzz/shared/relay/relay.dart';
+import 'package:buzz/shared/profile/user_cache_provider.dart';
+import 'package:buzz/shared/profile/user_profile.dart';
+import 'package:buzz/shared/widgets/app_list.dart';
+import 'package:flutter/foundation.dart';
 import 'package:buzz/shared/theme/theme.dart';
 import 'package:buzz/shared/widgets/frosted_app_bar.dart';
 import 'package:flutter/material.dart';
@@ -63,6 +67,7 @@ void main() {
           ? 'interrupted Solo recovery uses fresh membership before creating'
           : 'New Solo chat submits its discovery label through the production action',
       (tester) async {
+        final flutterSheet = defaultTargetPlatform == TargetPlatform.android;
         SharedPreferences.setMockInitialValues({});
         final prefs = await SharedPreferences.getInstance();
         final owner = nostr.Keys.generate(), agent = nostr.Keys.generate();
@@ -154,6 +159,7 @@ void main() {
           }
         });
         final directory = Completer<List<AgentDirectoryEntry>>();
+        if (flutterSheet) directory.complete([]);
         final draft = Completer<Map<String, String>>();
         String? presentationId;
         Map<Object?, Object?>? agentUpdate;
@@ -218,21 +224,71 @@ void main() {
           await tester.tap(find.text('Resume'));
           await tester.pumpAndSettle();
         }
-        expect(forms, 1, reason: 'Compose opens even while agents are loading');
-        if (recoverExisting) {
-          expect(savedAssistant, {
-            'id': agent.public,
-            'name': agent.public,
-            'avatarUrl': '',
-          });
+        if (flutterSheet) {
+          final row = find.byKey(const ValueKey('new-session-assistant'));
+          if (!recoverExisting) {
+            expect(find.text('Choose an agent'), findsOneWidget);
+            await tester.enterText(
+              find.byKey(const ValueKey('new-session-name')),
+              'Mobile Solo',
+            );
+            await tester.tap(find.text('Create chat'));
+            await tester.pumpAndSettle();
+            expect(
+              find.text('Enter a name and choose an agent.'),
+              findsOneWidget,
+            );
+            expect(relay.submitted, isEmpty);
+            expect(MeChatCreation.pending(sync), isNull);
+            await tester.pumpWidget(const SizedBox.shrink());
+            await tester.pumpAndSettle();
+            return;
+          }
+          final semantics = tester.ensureSemantics();
+          await tester.pump();
+          expect(find.text('Choose an agent'), findsNothing);
+          expect(find.text(agent.public), findsOneWidget);
+          expect(find.bySemanticsLabel(agent.public), findsOneWidget);
+          expect(tester.widget<AppListRowRaw>(row).onTap, isNull);
+          final container = ProviderScope.containerOf(tester.element(row));
+          container
+              .read(userCacheProvider.notifier)
+              .put(
+                UserProfile(pubkey: agent.public, displayName: 'Saved agent'),
+              );
+          await tester.pumpAndSettle();
+          expect(find.text('Saved agent'), findsOneWidget);
+          expect(find.bySemanticsLabel('Saved agent'), findsOneWidget);
+          expect(tester.widget<AppListRowRaw>(row).onTap, isNull);
+          semantics.dispose();
+          await tester.tap(find.text('Retry'));
+        } else {
+          expect(
+            forms,
+            1,
+            reason: 'Compose opens even while agents are loading',
+          );
+          if (recoverExisting) {
+            expect(savedAssistant, {
+              'id': agent.public,
+              'name': agent.public,
+              'avatarUrl': '',
+            });
+          }
+          directory.complete([
+            AgentDirectoryEntry(
+              pubkey: agent.public,
+              displayName: 'Owned agent',
+            ),
+          ]);
+          await tester.pumpAndSettle();
+          expect(agentUpdate?['presentationId'], presentationId);
+          expect(
+            (agentUpdate?['assistants'] as List).single['id'],
+            agent.public,
+          );
+          draft.complete({'name': 'Mobile Solo', 'assistant': agent.public});
         }
-        directory.complete([
-          AgentDirectoryEntry(pubkey: agent.public, displayName: 'Owned agent'),
-        ]);
-        await tester.pumpAndSettle();
-        expect(agentUpdate?['presentationId'], presentationId);
-        expect((agentUpdate?['assistants'] as List).single['id'], agent.public);
-        draft.complete({'name': 'Mobile Solo', 'assistant': agent.public});
         for (
           var attempts = 0;
           attempts < 100 && relay.submitted.isEmpty;
@@ -253,6 +309,7 @@ void main() {
             reason: 'Recovery continues with member setup',
           );
           expect(MeChatCreation.pending(sync)?.id, channelId);
+          expect(command.tags, contains(equals(['p', agent.public])));
         } else {
           expect(command.kind, 9007);
           expect(command.pubkey, owner.public);
@@ -264,7 +321,10 @@ void main() {
         await tester.pumpWidget(const SizedBox.shrink());
         await tester.pumpAndSettle();
       },
-      variant: TargetPlatformVariant.only(TargetPlatform.iOS),
+      variant: TargetPlatformVariant({
+        TargetPlatform.iOS,
+        TargetPlatform.android,
+      }),
     );
   }
 }
