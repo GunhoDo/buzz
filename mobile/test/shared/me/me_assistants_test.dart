@@ -452,6 +452,39 @@ void main() {
       isFalse,
     );
   });
+  for (final forgedFirst in [false, true]) {
+    test(
+      'a repeated ID cannot inject an agent (forged first: $forgedFirst)',
+      () async {
+        final genuine = managed(agent.public);
+        final forged = NostrEvent.fromJson(
+          genuine.toJson()
+            ..['tags'] = [
+              ['d', other.public],
+            ],
+        );
+        final relay = _Relay(
+          inventory: [
+            forgedFirst ? [forged, genuine] : [genuine, forged],
+          ],
+          profiles: [
+            profile(agent, ownedBy: owner),
+            profile(other, ownedBy: owner),
+          ],
+        );
+        final container = setup(relay);
+        expect(
+          (await container.read(
+            meAssistantsProvider.future,
+          )).map((a) => a.pubkey),
+          [agent.public],
+        );
+        final sync = container.read(meSyncProvider);
+        expect(await isOwnedMeAssistant(sync, other.public), isFalse);
+        expect(await isOwnedMeAssistant(sync, agent.public), isTrue);
+      },
+    );
+  }
   test(
     'creation rejects revoked ownership and unrelated returned profiles',
     () async {

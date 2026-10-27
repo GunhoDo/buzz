@@ -105,7 +105,7 @@ Future<List<String>> _managedAgentPubkeys(
   String? agent,
 }) async {
   final heads = <String, NostrEvent>{};
-  final verified = <String>{};
+  final verified = <String, NostrEvent>{};
   NostrEvent? cursor;
   for (var page = 0; ; page++) {
     if (page == _maxInventoryPages) {
@@ -135,21 +135,23 @@ Future<List<String>> _managedAgentPubkeys(
       throw StateError('Agent inventory response is outside its owner.');
     }
     for (final event in events) {
-      final d = event.getTagValue('d');
-      if (d == null || (agent != null && d != agent)) continue;
       // Like desktop, skip an envelope that fails verification so a forged
-      // record can neither add an agent nor supersede a genuine one. An ID
-      // already verified needs no second check when pages overlap.
-      if (!verified.contains(event.id)) {
+      // record can neither add an agent nor supersede a genuine one. When
+      // pages overlap, a repeated ID uses only the envelope already verified
+      // for it, never the bytes the relay sent again.
+      var record = verified[event.id];
+      if (record == null) {
         try {
           nostr.Event.fromJson(jsonEncode(event.toJson()));
         } catch (_) {
           continue;
         }
-        verified.add(event.id);
+        record = verified[event.id] = event;
       }
+      final d = record.getTagValue('d');
+      if (d == null || (agent != null && d != agent)) continue;
       final previous = heads[d];
-      if (previous == null || _newer(event, previous)) heads[d] = event;
+      if (previous == null || _newer(record, previous)) heads[d] = record;
     }
     if (events.length < _pageSize) break;
     // Relay order is newest first, then ID ascending at ties.
