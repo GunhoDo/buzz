@@ -55,9 +55,7 @@ Future<List<AgentDirectoryEntry>> _loadAssistants(
   RelaySessionNotifier session, {
   String? pubkey,
 }) async {
-  final candidates = pubkey == null
-      ? await _managedAgentPubkeys(sync, session)
-      : [pubkey];
+  final candidates = await _managedAgentPubkeys(sync, session, agent: pubkey);
   final profiles = <String, NostrEvent>{};
   for (var offset = 0; offset < candidates.length; offset += _pageSize) {
     final batch = candidates.sublist(
@@ -98,12 +96,16 @@ Future<List<AgentDirectoryEntry>> _loadAssistants(
 
 /// Candidate agents from the owner's own managed-agent records, as desktop
 /// discovers them. The records are discovery hints only: each candidate's
-/// profile must still carry a valid NIP-OA attestation by the owner.
+/// profile must still carry a valid NIP-OA attestation by the owner. With
+/// [agent], only that agent's record is read, so an agent removed from the
+/// inventory also fails revalidation before chat creation and send.
 Future<List<String>> _managedAgentPubkeys(
   MeSync sync,
-  RelaySessionNotifier session,
-) async {
+  RelaySessionNotifier session, {
+  String? agent,
+}) async {
   final heads = <String, NostrEvent>{};
+  final verified = <String>{};
   NostrEvent? cursor;
   for (var page = 0; ; page++) {
     if (page == _maxInventoryPages) {
@@ -116,6 +118,9 @@ Future<List<String>> _managedAgentPubkeys(
         authors: [sync.pubkey],
         limit: _pageSize,
         until: cursor?.createdAt,
+        tags: {
+          if (agent != null) '#d': [agent],
+        },
         extensions: {'before_id': ?cursor?.id},
       ),
     ]);
@@ -130,10 +135,21 @@ Future<List<String>> _managedAgentPubkeys(
       throw StateError('Agent inventory response is outside its owner.');
     }
     for (final event in events) {
-      final agent = event.getTagValue('d');
-      if (agent == null) continue;
-      final previous = heads[agent];
-      if (previous == null || _newer(event, previous)) heads[agent] = event;
+      final d = event.getTagValue('d');
+      if (d == null || (agent != null && d != agent)) continue;
+      // Like desktop, skip an envelope that fails verification so a forged
+      // record can neither add an agent nor supersede a genuine one. An ID
+      // already verified needs no second check when pages overlap.
+      if (!verified.contains(event.id)) {
+        try {
+          nostr.Event.fromJson(jsonEncode(event.toJson()));
+        } catch (_) {
+          continue;
+        }
+        verified.add(event.id);
+      }
+      final previous = heads[d];
+      if (previous == null || _newer(event, previous)) heads[d] = event;
     }
     if (events.length < _pageSize) break;
     // Relay order is newest first, then ID ascending at ties.
@@ -144,8 +160,8 @@ Future<List<String>> _managedAgentPubkeys(
     cursor = last;
   }
   return [
-    for (final MapEntry(key: agent, value: event) in heads.entries)
-      if (_agentPubkey.hasMatch(agent) && _hasName(event)) agent,
+    for (final MapEntry(key: d, value: event) in heads.entries)
+      if (_agentPubkey.hasMatch(d) && _hasName(event)) d,
   ];
 }
 

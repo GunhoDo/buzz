@@ -47,15 +47,18 @@ class _EmptyChannels extends ChannelsNotifier {
 
 class _Relay extends RelaySessionNotifier {
   final NostrEvent profile;
+  final NostrEvent inventory;
   final submitted = <NostrEvent>[];
-  _Relay(this.profile);
+  _Relay(this.profile, this.inventory);
 
   @override
   Future<List<NostrEvent>> queryRelay(
     List<NostrFilter> filters, {
     Duration timeout = const Duration(seconds: 8),
-  }) async =>
-      filters.any((filter) => filter.kinds.contains(0)) ? [profile] : [];
+  }) async => [
+    if (filters.any((filter) => filter.kinds.contains(0))) profile,
+    if (filters.any((filter) => filter.kinds.contains(30177))) inventory,
+  ];
 
   @override
   Future<List<NostrEvent>> fetchHistory(
@@ -108,7 +111,17 @@ void main() {
             ],
           ).toMap(),
         );
-        final relay = _Relay(profile);
+        final inventory = NostrEvent.fromJson(
+          nostr.Event.from(
+            kind: 30177,
+            content: jsonEncode({'name': 'Owned agent'}),
+            secretKey: owner.secret,
+            tags: [
+              ['d', agent.public],
+            ],
+          ).toMap(),
+        );
+        final relay = _Relay(profile, inventory);
         final config = RelayConfig(
           baseUrl: 'https://relay.test',
           nsec: owner.nsec,
