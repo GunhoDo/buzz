@@ -89,16 +89,17 @@ useMeChatAssistant(
       ? ref.watch(userCacheProvider)[selected] ??
             ref.read(userCacheProvider.notifier).get(selected)
       : null;
+  // The owner's inventory name outranks the agent's self-published profile.
   final name =
-      profile?.displayName ??
       agents
           .where((agent) => agent.pubkey == selected)
           .firstOrNull
-          ?.displayName;
+          ?.displayName ??
+      profile?.displayName;
   String agentName(String pubkey) {
     final names = [
-      ref.read(userCacheProvider)[pubkey]?.displayName,
       agents.where((a) => a.pubkey == pubkey).firstOrNull?.displayName,
+      ref.read(userCacheProvider)[pubkey]?.displayName,
     ];
     return names
             .whereType<String>()

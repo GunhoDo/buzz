@@ -22,8 +22,9 @@ import 'package:shared_preferences/shared_preferences.dart';
 class _Profiles extends UserCacheNotifier {
   @override
   Map<String, UserProfile> build() => {
-    'a': const UserProfile(pubkey: 'a', displayName: 'Alpha'),
-    'b': const UserProfile(pubkey: 'b', displayName: 'Beta'),
+    // Self-published names differ so tests prove the owner's name wins.
+    'a': const UserProfile(pubkey: 'a', displayName: 'Confusable Alpha'),
+    'b': const UserProfile(pubkey: 'b', displayName: 'Confusable Beta'),
   };
 }
 
