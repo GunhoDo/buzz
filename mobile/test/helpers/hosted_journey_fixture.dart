@@ -71,6 +71,8 @@ class HostedJourneyFixture {
   bool offerProfile = true;
   bool profileUnavailable = false;
   bool rejectList = false;
+  int saveFailures = 0;
+  final knownSaved = <String>{};
   bool missingList = false;
   bool loseCreateResponse = false;
   bool loseClaimResponse = false;
@@ -239,6 +241,23 @@ class HostedJourneyFixture {
         throw AccountFailure.unavailable;
       }
       result = {'community': created};
+    } else if (path.endsWith('/known-communities/list')) {
+      if (rejectList) return http.Response('{}', 503);
+      result = {
+        if (rows.isNotEmpty)
+          'communities': [
+            for (final row in rows)
+              {'community_url': 'wss://${row['normalized_host']}'},
+          ],
+      };
+    } else if (path.endsWith('/known-communities/add')) {
+      expect(request.method, 'POST');
+      final url = jsonDecode(request.body)['community_url'] as String;
+      knownSaved.add(url);
+      if (saveFailures-- > 0) return http.Response('{}', 503);
+      result = {
+        'community': {'community_url': url},
+      };
     } else if (path.endsWith('/communities/joined')) {
       if (rejectList) return http.Response('{}', 503);
       if (missingList) return http.Response('{}', 404);

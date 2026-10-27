@@ -58,7 +58,7 @@ class WidgetDiscoveryAccount extends BuilderlabAccountClient {
         'identity': {'pubkey_hex': fixture.bound},
       };
     }
-    if (path.endsWith('/communities/joined')) {
+    if (path.endsWith('/known-communities/list')) {
       return {'communities': fixture.rows};
     }
     throw AccountFailure.unavailable;
@@ -83,11 +83,8 @@ class HostedCommunitiesFixture {
   Future<void> Function()? beforeList;
   Uri? opened;
 
-  Map<String, dynamic> row(String name, {bool archived = false}) => {
-    'id': name,
-    'name': name,
-    'normalized_host': '$name.communities.buzz.xyz',
-    if (archived) 'archived_at': '2026-10-01T00:00:00Z',
+  Map<String, dynamic> row(String name) => {
+    'community_url': 'wss://$name.communities.buzz.xyz',
   };
 
   Future<void> initialize({bool backup = true, bool widget = false}) async {
@@ -121,10 +118,19 @@ class HostedCommunitiesFixture {
             200,
           );
         }
-        if (path.endsWith('/communities/joined')) {
+        if (path.endsWith('/known-communities/list')) {
           await beforeList?.call();
           if (rejectList) return http.Response('{}', 503);
           return http.Response(jsonEncode({'communities': rows}), 200);
+        }
+        if (path.endsWith('/known-communities/add')) {
+          final body = jsonDecode(request.body) as Map<String, dynamic>;
+          return http.Response(
+            jsonEncode({
+              'community': {'community_url': body['community_url']},
+            }),
+            200,
+          );
         }
         return http.Response('{}', 503);
       }),

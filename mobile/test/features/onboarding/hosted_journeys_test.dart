@@ -57,6 +57,56 @@ void main() {
     );
   }
 
+  journey('new account chooses creation and keeps its identity on retry', (
+    tester,
+    f,
+  ) async {
+    await f.initialize(localIdentity: false);
+    f.bound = null;
+    f.offerProfile = false;
+    await f.mount(tester);
+    await f.tap(tester, 'Continue with Builderlab');
+    expect(find.text('Create my Buzz identity'), findsOneWidget);
+    expect(find.text('Import existing identity'), findsOneWidget);
+    expect(await f.store.read(), isNull);
+    await f.tap(tester, 'Create my Buzz identity');
+    final saved = await f.store.read();
+    expect(saved, isNotNull);
+    expect(f.bound, saved!.pubkey);
+    expect(saved.backup, isNotNull);
+    await f.flow.retry();
+    await f.settle(tester);
+    expect((await f.store.read())!.pubkey, saved.pubkey);
+  });
+
+  journey(
+    'linked account without backup imports its key without replacing it',
+    (tester, f) async {
+      await f.initialize(localIdentity: false);
+      f.offerProfile = false;
+      await f.mount(tester);
+      await f.tap(tester, 'Continue with Builderlab');
+      expect(find.text('Create my Buzz identity'), findsNothing);
+      expect(find.text('Import existing identity'), findsOneWidget);
+      await expectLater(
+        f.flow.importIdentity(f.secondKeys.nsec),
+        throwsA(AccountIdentityFailure.mismatch),
+      );
+      expect(await f.store.read(), isNull);
+      expect(f.bound, f.keys.public);
+      await f.tap(tester, 'Import existing identity');
+      await tester.enterText(find.byType(TextField).hitTestable(), f.keys.nsec);
+      await f.tap(tester, 'Preview identity');
+      await f.tap(tester, 'Import this identity');
+      expect((await f.store.read())!.pubkey, f.keys.public);
+      expect((await f.store.read())!.backup, isNotNull);
+      expect(
+        f.requests.where((r) => r.url.path.endsWith('/recovery')),
+        isEmpty,
+      );
+    },
+  );
+
   journey('system Back leaves community creation', (tester, f) async {
     await f.initialize();
     await f.mount(tester);
@@ -331,7 +381,11 @@ void main() {
       expect((await f.storage.loadAll()).single.nsec, community.nsec);
       expect(await f.storage.loadActiveId(), community.id);
       expect((await f.store.read())!.pubkey, f.keys.public);
-      for (final path in ['/status', '/enrollment', '/communities/joined']) {
+      for (final path in [
+        '/status',
+        '/enrollment',
+        '/known-communities/list',
+      ]) {
         expect(
           f.sent(path),
           isEmpty,
@@ -402,8 +456,11 @@ void main() {
       } finally {
         browserReturn.complete();
       }
+      await f.settle(tester);
+      await tester.tap(find.text('Create my Buzz identity'));
       await enrollmentReached.future.timeout(const Duration(seconds: 5));
       await tester.pump();
+      await tester.pump(const Duration(milliseconds: 400));
       try {
         await tester.tap(find.text('Leave setup').hitTestable());
         await tester.pump();
@@ -569,7 +626,7 @@ void main() {
         findsOneWidget,
       );
       final firstSaved = (await f.storage.loadAll()).firstWhere(
-        (c) => c.name == 'one',
+        (c) => c.name == 'one.communities.buzz.xyz',
       );
       Navigator.of(
         tester.element(find.byType(ProfileSetupPage, skipOffstage: false)),
@@ -592,10 +649,19 @@ void main() {
             .every((c) => c.nsec == f.secondKeys.nsec),
         isTrue,
       );
-      expect(saved.singleWhere((c) => c.name == 'one').id, firstSaved.id);
+      expect(
+        saved.singleWhere((c) => c.name == 'one.communities.buzz.xyz').id,
+        firstSaved.id,
+      );
       expect(await f.storage.loadActiveId(), firstSaved.id);
-      expect(f.probes.where((c) => c.name == 'one'), hasLength(1));
-      expect(f.probes.where((c) => c.name == 'two'), hasLength(2));
+      expect(
+        f.probes.where((c) => c.name == 'one.communities.buzz.xyz'),
+        hasLength(1),
+      );
+      expect(
+        f.probes.where((c) => c.name == 'two.communities.buzz.xyz'),
+        hasLength(2),
+      );
       expect(find.byType(OnboardingAppEntry), findsNothing);
     },
   );
@@ -840,6 +906,7 @@ void main() {
     (tester, f) async {
       await f.initialize();
       f.offerProfile = false;
+      f.saveFailures = 1;
       // The first dispatched attempt ends; retry owns the pending consent.
       // A new incoming link must now invalidate that consent, not wait on it.
       f.policyResponses.addAll([
@@ -871,6 +938,15 @@ void main() {
         f.sent('/accept-policy').single.url.host,
         'two.communities.buzz.xyz',
       );
+      // The remote add was accepted but its acknowledgement was lost. The
+      // saved community and pending intent survive; retry never reclaims it.
+      expect(find.text('Try again').hitTestable(), findsOneWidget);
+      expect(f.knownSaved, {'wss://two.communities.buzz.xyz'});
+      await f.restart(tester);
+      await f.tap(tester, 'Start login again');
+      expect((await f.storage.loadAll()).single.id, saved.id);
+      expect(f.sent('/claim'), hasLength(1));
+      expect(f.sent('/known-communities/add'), hasLength(2));
       expect(find.byType(OnboardingAppEntry), findsNothing);
     },
     requiresAuthDomain: true,
