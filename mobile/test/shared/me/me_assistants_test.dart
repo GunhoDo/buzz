@@ -84,12 +84,17 @@ void main() {
 
   var fakeAgents = 0;
   String fakeAgent() => (++fakeAgents).toRadixString(16).padLeft(64, 'a');
+  const policy = {
+    'name': 'Agent',
+    'parallelism': 1,
+    'respond_to': 'owner-only',
+  };
   NostrEvent managed(
     String d, {
     nostr.Keys? by,
     int time = 1,
     int kind = 30177,
-    Object? content = const {'name': 'Agent'},
+    Object? content = policy,
   }) => NostrEvent.fromJson(
     nostr.Event.from(
       kind: kind,
@@ -233,10 +238,10 @@ void main() {
     final relay = _Relay(
       inventory: [
         [
-          managed(renamed.public, time: 3, content: {'name': ' '}),
+          managed(renamed.public, time: 3, content: {...policy, 'name': ' '}),
           managed(agent.public, time: 2),
           managed(renamed.public, time: 2),
-          managed(unnamed.public, content: {'name': 7}),
+          managed(unnamed.public, content: {...policy, 'name': 7}),
           managed(agent.public.toUpperCase()),
           managed('not-a-pubkey'),
         ],
@@ -250,6 +255,74 @@ void main() {
     final choices = await setup(relay).read(meAssistantsProvider.future);
     expect(choices.map((a) => a.pubkey), [agent.public]);
     expect(relay.profileAuthors.single, [agent.public]);
+  });
+  for (final (label, content) in [
+    ('unsupported respond_to', {...policy, 'respond_to': 'nobody'}),
+    ('missing respond_to', {'name': 'Agent', 'parallelism': 1}),
+    ('missing parallelism', {'name': 'Agent', 'respond_to': 'anyone'}),
+    ('negative parallelism', {...policy, 'parallelism': -1}),
+    ('fractional parallelism', {...policy, 'parallelism': 1.5}),
+    ('oversized parallelism', {...policy, 'parallelism': 0x100000000}),
+    ('non-list allowlist', {...policy, 'respond_to_allowlist': 'x'}),
+    (
+      'non-string allowlist entry',
+      {
+        ...policy,
+        'respond_to': 'allowlist',
+        'respond_to_allowlist': [7],
+      },
+    ),
+    ('null allowlist', {...policy, 'respond_to_allowlist': null}),
+    ('non-string model', {...policy, 'model': 7}),
+    ('non-object content', ['Agent']),
+  ]) {
+    test('an unsupported latest policy fails closed: $label', () async {
+      final relay = _Relay(
+        inventory: [
+          [
+            managed(agent.public, time: 2, content: content),
+            managed(agent.public),
+          ],
+        ],
+        profiles: [profile(agent, ownedBy: owner)],
+      );
+      final container = setup(relay);
+      expect(await container.read(meAssistantsProvider.future), isEmpty);
+      expect(
+        await isOwnedMeAssistant(container.read(meSyncProvider), agent.public),
+        isFalse,
+      );
+    });
+  }
+  test('accepts every supported policy shape', () async {
+    final shapes = [
+      policy,
+      {...policy, 'respond_to': 'anyone', 'parallelism': 0},
+      {
+        ...policy,
+        'respond_to': 'allowlist',
+        'respond_to_allowlist': [other.public],
+        'persona_id': 'scout',
+        'model': null,
+        'future_field': true,
+      },
+    ];
+    final agents = [for (final _ in shapes) nostr.Keys.generate()];
+    final relay = _Relay(
+      inventory: [
+        [
+          for (var i = 0; i < shapes.length; i++)
+            managed(agents[i].public, content: shapes[i]),
+        ],
+      ],
+      profiles: [for (final key in agents) profile(key, ownedBy: owner)],
+    );
+    expect(
+      (await setup(
+        relay,
+      ).read(meAssistantsProvider.future)).map((a) => a.pubkey),
+      unorderedEquals(agents.map((key) => key.public)),
+    );
   });
   test('reads beyond the first inventory page with a cursor', () async {
     final first = fullPage;
@@ -320,7 +393,11 @@ void main() {
   });
   test('same-second inventory records keep the lowest id', () async {
     final named = managed(agent.public, time: 5);
-    final unnamed = managed(agent.public, time: 5, content: {'name': ''});
+    final unnamed = managed(
+      agent.public,
+      time: 5,
+      content: {...policy, 'name': ''},
+    );
     final relay = _Relay(
       inventory: [
         [named, unnamed],

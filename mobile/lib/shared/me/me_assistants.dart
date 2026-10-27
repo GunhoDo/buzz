@@ -163,7 +163,7 @@ Future<List<String>> _managedAgentPubkeys(
   }
   return [
     for (final MapEntry(key: d, value: event) in heads.entries)
-      if (_agentPubkey.hasMatch(d) && _hasName(event)) d,
+      if (_agentPubkey.hasMatch(d) && _isSupportedPolicy(event)) d,
   ];
 }
 
@@ -171,14 +171,41 @@ bool _newer(NostrEvent a, NostrEvent b) =>
     a.createdAt > b.createdAt ||
     (a.createdAt == b.createdAt && a.id.compareTo(b.id) < 0);
 
-/// Desktop omits managed-agent records without a name; match its inventory.
-bool _hasName(NostrEvent event) {
+/// Whether a managed-agent record holds a policy desktop can apply. This
+/// mirrors desktop's `ManagedAgentEventContent` parse, plus the non-empty name
+/// desktop's agent library requires. An unsupported latest record fails
+/// closed: it excludes the agent rather than falling back to an older one.
+bool _isSupportedPolicy(NostrEvent event) {
+  final Object? decoded;
   try {
-    final body = jsonDecode(event.content);
-    return body is Map &&
-        body['name'] is String &&
-        (body['name'] as String).trim().isNotEmpty;
-  } catch (_) {
+    decoded = jsonDecode(event.content);
+  } on FormatException {
     return false;
   }
+  if (decoded is! Map<String, dynamic>) return false;
+  final body = decoded;
+  final name = body['name'];
+  final parallelism = body['parallelism'];
+  final allowlist = body['respond_to_allowlist'];
+  return name is String &&
+      name.trim().isNotEmpty &&
+      parallelism is int &&
+      parallelism >= 0 &&
+      parallelism <= 0xFFFFFFFF &&
+      _respondTo.contains(body['respond_to']) &&
+      (!body.containsKey('respond_to_allowlist') ||
+          (allowlist is List && allowlist.every((entry) => entry is String))) &&
+      _optionalPolicyText.every((field) {
+        final value = body[field];
+        return value == null || value is String;
+      });
 }
+
+const _respondTo = {'owner-only', 'allowlist', 'anyone'};
+const _optionalPolicyText = [
+  'persona_id',
+  'system_prompt',
+  'model',
+  'provider',
+  'persona_source_version',
+];

@@ -114,7 +114,11 @@ void main() {
         final inventory = NostrEvent.fromJson(
           nostr.Event.from(
             kind: 30177,
-            content: jsonEncode({'name': 'Owned agent'}),
+            content: jsonEncode({
+              'name': 'Owned agent',
+              'parallelism': 1,
+              'respond_to': 'owner-only',
+            }),
             secretKey: owner.secret,
             tags: [
               ['d', agent.public],
