@@ -718,6 +718,8 @@ impl AcpClient {
     pub async fn initialize(&mut self) -> Result<serde_json::Value, AcpError> {
         // Requesting version 2 is an intentional temporary pin — we are squatting
         // on ACP v2 ahead of the upstream ACP RFD. Revisit when that RFD merges.
+        // The v1 fallback below only covers adapters that implement upstream v2
+        // and therefore reject this body; it goes away with the pin.
         let params = build_initialize_params(PREFERRED_PROTOCOL_VERSION);
         let result = match self.send_request("initialize", params).await {
             Err(AcpError::AgentError { code, message }) if code == JSONRPC_INVALID_PARAMS => {
@@ -740,9 +742,12 @@ impl AcpClient {
         Ok(result)
     }
 
-    /// Replace the agent process with a fresh one launched the same way,
-    /// keeping the observer wiring. The old process is reaped.
+    /// Reap the agent process and replace it with a fresh one launched the
+    /// same way. Only the process-owned fields change, so any client state
+    /// set before `initialize` (observer wiring, etc.) carries over.
     async fn relaunch(&mut self) -> Result<(), AcpError> {
+        // Reap first so two adapter process trees never run side by side.
+        self.shutdown().await;
         let spec = self.launch_spec.clone();
         let mut fresh = Self::spawn_with_env(
             &spec.command,
@@ -752,11 +757,11 @@ impl AcpClient {
             &spec.launch_env,
         )
         .await?;
-        fresh.observer = self.observer.take();
-        fresh.observer_agent_index = self.observer_agent_index;
-        fresh.observer_context = std::mem::take(&mut self.observer_context);
-        let mut stale = std::mem::replace(self, fresh);
-        stale.shutdown().await;
+        std::mem::swap(&mut self.child, &mut fresh.child);
+        std::mem::swap(&mut self.stdin, &mut fresh.stdin);
+        std::mem::swap(&mut self.reader, &mut fresh.reader);
+        self.next_id = 0;
+        // `fresh` now owns the already-reaped process; dropping it is a no-op.
         Ok(())
     }
 
@@ -3856,6 +3861,7 @@ mod tests {
         let mut client = AcpClient::spawn("bash", &["-c".into(), script.into()], &[], false)
             .await
             .expect("failed to spawn test script");
+        client.set_observer(None, 7);
         let result = tokio::time::timeout(std::time::Duration::from_secs(10), client.initialize())
             .await
             .expect("fallback should not hang on the rejecting process")
@@ -3865,21 +3871,44 @@ mod tests {
             result["_receivedRequest"]["params"]["protocolVersion"],
             serde_json::json!(1)
         );
+        assert_eq!(
+            client.observer_agent_index(),
+            Some(7),
+            "relaunch must keep client state set before initialize"
+        );
         client.shutdown().await;
     }
 
     #[tokio::test]
     async fn initialize_does_not_relaunch_on_other_errors() {
-        let script = r#"
+        let launches = std::env::temp_dir().join(format!(
+            "buzz-acp-init-launches-{}-{}",
+            std::process::id(),
+            uuid::Uuid::new_v4()
+        ));
+        let script = format!(
+            r#"
+            echo launch >> '{}'
             read -t 5 _REQ
-            echo '{"jsonrpc":"2.0","id":0,"error":{"code":-32603,"message":"Internal error"}}'
+            echo '{{"jsonrpc":"2.0","id":0,"error":{{"code":-32603,"message":"Internal error"}}}}'
             sleep 1
-        "#;
-        let mut client = spawn_script(script).await;
+        "#,
+            launches.display()
+        );
+        let mut client = AcpClient::spawn("bash", &["-c".into(), script], &[], false)
+            .await
+            .expect("failed to spawn test script");
         assert!(matches!(
             client.initialize().await,
             Err(AcpError::AgentError { code: -32603, .. })
         ));
+        let launch_count = std::fs::read_to_string(&launches)
+            .expect("script should record its launch")
+            .lines()
+            .count();
+        let _ = std::fs::remove_file(&launches);
+        assert_eq!(launch_count, 1, "only -32602 may trigger a relaunch");
+        client.shutdown().await;
     }
 
     #[tokio::test]
