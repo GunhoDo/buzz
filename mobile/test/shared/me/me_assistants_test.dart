@@ -87,12 +87,13 @@ void main() {
     String d, {
     nostr.Keys? by,
     int time = 1,
+    int kind = 30177,
     Object? content = const {'name': 'Agent'},
   }) => NostrEvent(
     id: (++records).toRadixString(16).padLeft(64, '0'),
     pubkey: by?.public ?? ownerPubkey,
     createdAt: time,
-    kind: 30177,
+    kind: kind,
     tags: [
       ['d', d],
     ],
@@ -294,12 +295,44 @@ void main() {
     expect(relay.inventoryFilters.length, 2);
     expect(relay.profileFilters, isEmpty);
   });
-  test('rejects inventory records outside the owner', () async {
+  test('inventory cursor follows relay order at same-second ties', () async {
+    // Relay order is created_at descending, then id ascending. An unordered
+    // tied page must still advance from its largest id.
+    final tied = [for (var i = 0; i < 100; i++) managed(fakeAgent(), time: 5)];
     final relay = _Relay(
       inventory: [
-        [managed(agent.public, by: other)],
+        [...tied.reversed],
+        [managed(agent.public, time: 5)],
       ],
       profiles: [profile(agent, ownedBy: owner)],
+    );
+    expect(
+      (await setup(relay).read(meAssistantsProvider.future)).single.pubkey,
+      agent.public,
+    );
+    expect(relay.inventoryFilters.last['until'], 5);
+    expect(relay.inventoryFilters.last['before_id'], tied.last.id);
+  });
+  test('same-second inventory records keep the lowest id', () async {
+    final relay = _Relay(
+      inventory: [
+        [
+          managed(agent.public, time: 5),
+          managed(agent.public, time: 5, content: {'name': ''}),
+        ],
+      ],
+      profiles: [profile(agent, ownedBy: owner)],
+    );
+    expect(
+      (await setup(relay).read(meAssistantsProvider.future)).single.pubkey,
+      agent.public,
+    );
+  });
+  test('rejects an inventory page larger than requested', () async {
+    final relay = _Relay(
+      inventory: [
+        [for (var i = 0; i < 101; i++) managed(fakeAgent())],
+      ],
     );
     await expectLater(
       setup(relay).read(meAssistantsProvider.future),
@@ -307,6 +340,24 @@ void main() {
     );
     expect(relay.profileFilters, isEmpty);
   });
+  for (final (label, record) in [
+    ('another author', () => managed(agent.public, by: other)),
+    ('another kind', () => managed(agent.public, kind: 30175)),
+  ]) {
+    test('rejects inventory records from $label', () async {
+      final relay = _Relay(
+        inventory: [
+          [record()],
+        ],
+        profiles: [profile(agent, ownedBy: owner)],
+      );
+      await expectLater(
+        setup(relay).read(meAssistantsProvider.future),
+        throwsStateError,
+      );
+      expect(relay.profileFilters, isEmpty);
+    });
+  }
   for (final conditions in ['kind=1', 'created_at>1', 'created_at<1']) {
     test(
       'discovery and send revalidation reject inapplicable $conditions',
